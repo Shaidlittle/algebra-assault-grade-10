@@ -1660,7 +1660,7 @@ export default function App() {
                   This is a <span className="text-cyan-300 font-semibold">free practice tool from MathCoach</span>, built to make Grade 10 algebra revision feel less like a chore.
                 </p>
                 <p>
-                  It's a <span className="text-white font-semibold">supplement to learning, not a replacement</span> for teaching or tutoring. Questions follow the IEB Grade 10 curriculum — always check your child's specific test scope with their teacher.
+                  It's a <span className="text-white font-semibold">supplement to learning, not a replacement</span> for teaching or tutoring. It covers core Grade 10 algebra suitable for CAPS, IEB and Cambridge learners — always check your child's specific test scope with their teacher.
                 </p>
                 <p>
                   This is an <span className="text-amber-300 font-semibold">early test version</span>. If something looks wrong or breaks, that feedback is exactly what we need. Thank you for testing it.
@@ -1672,7 +1672,7 @@ export default function App() {
                 Got it — Let's Play
               </button>
               <div className="text-center text-slate-500 text-[11px] mt-3">
-                MathCoach · IEB Grade 10 Mathematics
+                MathCoach · Grade 10 Algebra · CAPS / IEB / Cambridge
               </div>
             </div>
           </div>
@@ -1697,7 +1697,7 @@ export default function App() {
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-pink-400 via-orange-400 to-amber-400">ASSAULT</span>
           </h1>
           <div className="text-lg text-cyan-300 mb-1 font-bold">⚡ MATTEO'S MATH MISSION ⚡</div>
-          <div className="text-sm text-slate-300 mb-6">IEB Grade 10 Test Prep</div>
+          <div className="text-sm text-slate-300 mb-6">Grade 10 Algebra Practice · CAPS / IEB / Cambridge</div>
           
           <button onClick={() => setScreen('topicSelect')}
             className="group bg-gradient-to-r from-cyan-500 to-purple-600 text-white text-2xl font-black px-12 py-5 rounded-full shadow-2xl shadow-purple-500/50 hover:scale-110 active:scale-95 transition-all border-2 border-white/30">
