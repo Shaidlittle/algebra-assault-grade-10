@@ -1,6 +1,79 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Heart, Trophy, Pause, Play, RotateCcw, ChevronRight, X, Volume2, VolumeX, Crosshair, Check, Flame, Skull, Shield, Zap, Target, Timer, AlertTriangle } from 'lucide-react';
 
+/* ============================================================
+   MathText — renders maths text safely on EVERY device.
+   Many mobile fonts have no glyph for Unicode superscript
+   characters (⁰⁴⁵⁶⁷⁸⁹ⁿˣ …), so "x⁵" was showing as "x□".
+   This component converts those characters into real <sup>/<sub>
+   tags using ordinary digits, which every font can render.
+   The underlying answer strings are NEVER changed, so answer
+   matching (answer === q.a) keeps working exactly as before.
+   ============================================================ */
+const SUPERSCRIPT_MAP = {
+  '\u2070': '0', '\u00B9': '1', '\u00B2': '2', '\u00B3': '3', '\u2074': '4',
+  '\u2075': '5', '\u2076': '6', '\u2077': '7', '\u2078': '8', '\u2079': '9',
+  '\u207A': '+', '\u207B': '\u2212', '\u207C': '=', '\u207D': '(', '\u207E': ')',
+  '\u207F': 'n', '\u02E3': 'x', '\u2071': 'i',
+};
+const SUBSCRIPT_MAP = {
+  '\u2080': '0', '\u2081': '1', '\u2082': '2', '\u2083': '3', '\u2084': '4',
+  '\u2085': '5', '\u2086': '6', '\u2087': '7', '\u2088': '8', '\u2089': '9',
+  '\u208A': '+', '\u208B': '\u2212', '\u208C': '=', '\u208D': '(', '\u208E': ')',
+};
+// characters allowed to sit *inside* a run (e.g. the dot in x²·⁵)
+const RUN_CONTINUE = { '.': true, '\u00B7': true };
+
+function MathText({ children, className = '' }) {
+  const text = String(children == null ? '' : children);
+  const nodes = [];
+  let buf = '';
+  let run = '';
+  let runType = null; // 'sup' | 'sub'
+  let key = 0;
+
+  const flushBuf = () => { if (buf) { nodes.push(buf); buf = ''; } };
+  const flushRun = () => {
+    if (run) {
+      nodes.push(
+        runType === 'sup'
+          ? <sup key={'s' + key++} className="math-sup">{run}</sup>
+          : <sub key={'s' + key++} className="math-sub">{run}</sub>
+      );
+      run = '';
+    }
+    runType = null;
+  };
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const sup = SUPERSCRIPT_MAP[ch];
+    const sub = SUBSCRIPT_MAP[ch];
+    if (sup !== undefined) {
+      if (runType === 'sub') flushRun();
+      if (runType !== 'sup') { flushBuf(); runType = 'sup'; }
+      run += sup;
+    } else if (sub !== undefined) {
+      if (runType === 'sup') flushRun();
+      if (runType !== 'sub') { flushBuf(); runType = 'sub'; }
+      run += sub;
+    } else if (
+      runType && RUN_CONTINUE[ch] && i + 1 < text.length &&
+      ((runType === 'sup' && SUPERSCRIPT_MAP[text[i + 1]] !== undefined) ||
+       (runType === 'sub' && SUBSCRIPT_MAP[text[i + 1]] !== undefined))
+    ) {
+      run += ch; // decimal point sandwiched between superscript digits
+    } else {
+      if (runType) flushRun();
+      buf += ch;
+    }
+  }
+  flushRun();
+  flushBuf();
+
+  return <span className={className}>{nodes}</span>;
+}
+
 const QUESTIONS = {
   linear: {
     name: 'Linear Equations', short: 'Linear', color: '#3b82f6',
@@ -557,21 +630,39 @@ export default function App() {
       if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) e.preventDefault();
     };
     const onUp = (e) => { gameRef.current.keys[e.key.toLowerCase()] = false; };
+    // If the window loses focus (alt-tab, click away) keys can get
+    // "stuck" down — the ship drifts on its own. Clear them on blur.
+    const clearKeys = () => { gameRef.current.keys = {}; };
     window.addEventListener('keydown', onDown);
     window.addEventListener('keyup', onUp);
+    window.addEventListener('blur', clearKeys);
     return () => {
       window.removeEventListener('keydown', onDown);
       window.removeEventListener('keyup', onUp);
+      window.removeEventListener('blur', clearKeys);
     };
   }, []);
   
+  // Also clear held keys whenever the game pauses, a question modal
+  // opens, or we leave the playing screen — otherwise the ship keeps
+  // moving the instant play resumes.
+  useEffect(() => {
+    if (paused || showQuestion || screen !== 'playing') {
+      gameRef.current.keys = {};
+    }
+  }, [paused, showQuestion, screen]);
+  
   // Pointer
-  const updatePointer = (clientX, clientY) => {
+  // On touch, lift the ship ~78px above the finger so the thumb
+  // doesn't cover the ship, its bullets, or incoming fire.
+  const TOUCH_Y_OFFSET = 78;
+  const updatePointer = (clientX, clientY, isTouch = false) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const x = ((clientX - rect.left) / rect.width) * W;
-    const y = ((clientY - rect.top) / rect.height) * H;
+    let y = ((clientY - rect.top) / rect.height) * H;
+    if (isTouch) y -= TOUCH_Y_OFFSET;
     gameRef.current.pointer.x = x;
     gameRef.current.pointer.y = y;
     gameRef.current.pointer.active = true;
@@ -580,9 +671,29 @@ export default function App() {
   const handleMouseMove = (e) => updatePointer(e.clientX, e.clientY);
   const handleMouseDown = (e) => updatePointer(e.clientX, e.clientY);
   const handleMouseLeave = () => { gameRef.current.pointer.active = false; };
-  const handleTouchStart = (e) => { e.preventDefault(); if (e.touches[0]) updatePointer(e.touches[0].clientX, e.touches[0].clientY); };
-  const handleTouchMove = (e) => { e.preventDefault(); if (e.touches[0]) updatePointer(e.touches[0].clientX, e.touches[0].clientY); };
-  const handleTouchEnd = (e) => { e.preventDefault(); gameRef.current.pointer.active = false; };
+  
+  // Native, non-passive touch listeners on the canvas.
+  // React's onTouch* handlers are passive — calling preventDefault()
+  // inside them throws a console error and doesn't reliably block
+  // pull-to-refresh / scroll. Attaching natively with passive:false fixes it.
+  useEffect(() => {
+    if (screen !== 'playing') return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onStart = (e) => { e.preventDefault(); if (e.touches[0]) updatePointer(e.touches[0].clientX, e.touches[0].clientY, true); };
+    const onMove = (e) => { e.preventDefault(); if (e.touches[0]) updatePointer(e.touches[0].clientX, e.touches[0].clientY, true); };
+    const onEnd = (e) => { e.preventDefault(); gameRef.current.pointer.active = false; };
+    canvas.addEventListener('touchstart', onStart, { passive: false });
+    canvas.addEventListener('touchmove', onMove, { passive: false });
+    canvas.addEventListener('touchend', onEnd, { passive: false });
+    canvas.addEventListener('touchcancel', onEnd, { passive: false });
+    return () => {
+      canvas.removeEventListener('touchstart', onStart);
+      canvas.removeEventListener('touchmove', onMove);
+      canvas.removeEventListener('touchend', onEnd);
+      canvas.removeEventListener('touchcancel', onEnd);
+    };
+  }, [screen]);
   
   // Game loop
   useEffect(() => {
@@ -1561,7 +1672,7 @@ export default function App() {
           </button>
           
           <div className="mt-6 text-slate-400 text-xs space-y-1 max-w-xs mx-auto">
-            <div>🚀 Drag/touch to fly your ship</div>
+            <div>🚀 Mouse/drag or WASD/arrow keys to fly</div>
             <div>👾 Kill aliens, dodge bullets, solve math</div>
             <div>💎 Power-ups, boss fights, shield bonuses</div>
             <div>⏱ Try Exam Simulator for real test pressure</div>
@@ -1610,7 +1721,7 @@ export default function App() {
                 <button key={t} onClick={() => startMission(t)}
                   className={`relative p-5 rounded-2xl text-left text-white shadow-xl transition-all border-2 bg-gradient-to-br ${tt.bgColor} hover:scale-105 active:scale-95 ${isDone ? 'border-emerald-400' : isExam ? 'border-red-400 ring-2 ring-red-400/40 animate-pulse-glow' : isUltimate ? 'border-amber-400 ring-2 ring-amber-400/40' : 'border-white/20'} touch-manipulation`}>
                   <div className="flex items-start justify-between mb-2">
-                    <div className="text-4xl font-black opacity-90">{tt.icon}</div>
+                    <div className="text-4xl font-black opacity-90"><MathText>{tt.icon}</MathText></div>
                     {isDone && <div className="bg-emerald-500 rounded-full p-1.5 shadow-lg"><Check className="w-4 h-4 text-white" /></div>}
                     {isExam && !isDone && (
                       <div className="bg-red-500 rounded-full px-2 py-0.5 shadow-lg text-[9px] font-black text-white tracking-wider flex items-center gap-1">
@@ -1643,6 +1754,8 @@ export default function App() {
           .animate-pulse-slow { animation: pulse-slow 2s ease-in-out infinite; }
           @keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 20px rgba(220, 38, 38, 0.3); } 50% { box-shadow: 0 0 40px rgba(220, 38, 38, 0.7); } }
           .animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+          .math-sup { font-size: 0.62em; vertical-align: super; line-height: 0; margin-left: 0.5px; }
+          .math-sub { font-size: 0.62em; vertical-align: sub; line-height: 0; margin-left: 0.5px; }
         `}</style>
       </div>
     );
@@ -1669,7 +1782,7 @@ export default function App() {
     const timerBgColor = timeCritical ? 'from-red-500 to-red-700' : timeLow ? 'from-amber-400 to-orange-500' : 'from-emerald-400 to-emerald-600';
     
     return (
-      <div className={`w-full h-screen min-h-[600px] bg-gradient-to-br from-red-950 via-black to-red-950 overflow-hidden relative ${timeCritical && !examFeedback ? 'animate-shake-fast' : ''}`}>
+      <div className={`w-full h-screen min-h-[600px] bg-gradient-to-br from-red-950 via-black to-red-950 overflow-hidden relative ${timeCritical && !examFeedback ? 'animate-shake-fast' : ''}`} style={{ height: '100dvh' }}>
         {/* Pulsing red border indicating exam stress */}
         <div className={`absolute inset-0 pointer-events-none border-4 sm:border-8 ${timeCritical ? 'border-red-500 animate-pulse-fast' : timeLow ? 'border-red-600 animate-pulse' : 'border-red-700/50'}`} />
         
@@ -1733,7 +1846,7 @@ export default function App() {
           <div className="flex-1 flex items-center justify-center mb-3 sm:mb-4">
             <div className={`bg-black/70 backdrop-blur-sm rounded-2xl p-5 sm:p-6 md:p-8 border-2 ${timeCritical ? 'border-red-500 shadow-lg shadow-red-500/50' : 'border-red-500/40'} max-w-2xl w-full`}>
               <div className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black text-white text-center font-mono whitespace-pre-line leading-tight">
-                {q.q}
+                <MathText>{q.q}</MathText>
               </div>
             </div>
           </div>
@@ -1747,7 +1860,7 @@ export default function App() {
             } animate-pulse-fast`}>
               <div className="text-2xl sm:text-3xl font-black text-white mb-1">{examFeedback.text}</div>
               {examFeedback.points && <div className="text-base sm:text-lg font-bold text-yellow-300">+{examFeedback.points} <span className="text-xs text-white/70">(+{examFeedback.time}s bonus)</span></div>}
-              {examFeedback.correct && examFeedback.type !== 'correct' && <div className="text-sm sm:text-base text-white mt-2">Correct: <span className="font-bold">{examFeedback.correct}</span></div>}
+              {examFeedback.correct && examFeedback.type !== 'correct' && <div className="text-sm sm:text-base text-white mt-2">Correct: <span className="font-bold"><MathText>{examFeedback.correct}</MathText></span></div>}
               {examFeedback.hint && <div className="text-xs sm:text-sm text-white/90 mt-1">💡 {examFeedback.hint}</div>}
               {examFeedback.livesLeft !== undefined && (
                 <div className="text-xs sm:text-sm text-red-200 mt-2 font-bold">
@@ -1760,7 +1873,7 @@ export default function App() {
               {shuffled.map((ans, i) => (
                 <button key={i} onClick={() => handleExamAnswer(ans)}
                   className="bg-white hover:bg-yellow-200 active:scale-95 active:bg-yellow-300 text-slate-900 font-mono font-black text-base sm:text-lg md:text-xl px-3 py-4 sm:py-5 md:py-6 rounded-xl shadow-lg border-2 border-slate-900 transition-all touch-manipulation">
-                  {ans}
+                  <MathText>{ans}</MathText>
                 </button>
               ))}
             </div>
@@ -1772,6 +1885,8 @@ export default function App() {
           .animate-pulse-fast { animation: pulse-fast 0.6s ease-in-out infinite; }
           @keyframes shake-fast { 0%, 100% { transform: translate(0, 0); } 25% { transform: translate(-2px, 1px); } 50% { transform: translate(2px, -1px); } 75% { transform: translate(-1px, -1px); } }
           .animate-shake-fast { animation: shake-fast 0.2s ease-in-out infinite; }
+          .math-sup { font-size: 0.62em; vertical-align: super; line-height: 0; margin-left: 0.5px; }
+          .math-sub { font-size: 0.62em; vertical-align: sub; line-height: 0; margin-left: 0.5px; }
         `}</style>
       </div>
     );
@@ -1858,9 +1973,9 @@ export default function App() {
     const hpLow = hp <= 30;
     
     return (
-      <div className="w-full h-screen min-h-[600px] bg-black flex flex-col overflow-hidden relative">
-        {/* TOP HUD */}
-        <div className="absolute top-0 left-0 right-0 z-20 px-2 py-1.5 sm:py-2 bg-black/60 backdrop-blur-sm border-b border-white/10">
+      <div className="w-full h-screen min-h-[600px] bg-black flex flex-col overflow-hidden relative" style={{ height: '100dvh' }}>
+        {/* TOP HUD — in normal flow so it never covers the play area */}
+        <div className="relative z-20 px-2 py-1.5 sm:py-2 bg-black/60 backdrop-blur-sm border-b border-white/10 flex-shrink-0">
           <div className="flex items-center gap-2 mb-1.5">
             <button onClick={() => setPaused(p => !p)}
               className="bg-white/10 hover:bg-white/20 active:bg-white/30 text-white p-2 rounded-full transition-colors flex-shrink-0 touch-manipulation">
@@ -1941,12 +2056,11 @@ export default function App() {
           </div>
         </div>
         
-        <div className="flex-1 flex items-center justify-center relative">
+        <div className="flex-1 flex items-center justify-center relative overflow-hidden">
           <canvas ref={canvasRef} width={W} height={H}
-            className="touch-none select-none cursor-none"
-            style={{ maxWidth: '100%', maxHeight: '100%', width: 'auto', height: '100%', imageRendering: 'auto' }}
-            onMouseMove={handleMouseMove} onMouseDown={handleMouseDown} onMouseLeave={handleMouseLeave}
-            onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} />
+            className={`touch-none select-none ${(!paused && !showQuestion) ? 'cursor-none' : 'cursor-default'}`}
+            style={{ maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', aspectRatio: `${W} / ${H}`, imageRendering: 'auto' }}
+            onMouseMove={handleMouseMove} onMouseDown={handleMouseDown} onMouseLeave={handleMouseLeave} />
         </div>
         
         {paused && !showQuestion && (
@@ -1972,7 +2086,7 @@ export default function App() {
                   {bossActive ? `⚠ DAMAGE THE BOSS ⚠` : `⚡ CHECKPOINT ${qIdx + 1}/${WAVES_BEFORE_BOSS} ⚡`}
                 </div>
                 <div className="bg-black/60 rounded-2xl px-4 py-4 sm:px-6 sm:py-5 border border-white/20 my-2">
-                  <div className="text-2xl sm:text-3xl md:text-4xl font-black text-white whitespace-pre-line font-mono leading-tight">{q.q}</div>
+                  <div className="text-2xl sm:text-3xl md:text-4xl font-black text-white whitespace-pre-line font-mono leading-tight"><MathText>{q.q}</MathText></div>
                 </div>
                 <div className="text-xs sm:text-sm text-white/80">
                   {bossActive ? `Right answer = boss damage + shield bonus. Wrong = -${DMG_WRONG} HP.` : `Right answer = +${HP_CORRECT_BONUS} HP. Wrong = -${DMG_WRONG} HP.`}
@@ -1985,7 +2099,7 @@ export default function App() {
                   {feedback.points && <div className="text-lg sm:text-xl font-bold text-yellow-300">+{feedback.points}</div>}
                   {feedback.hpBonus > 0 && <div className="text-sm sm:text-base font-bold text-emerald-300 mt-1">+{feedback.hpBonus} HP restored ❤️</div>}
                   {feedback.shieldBonus && <div className="text-sm sm:text-base font-bold text-cyan-300 mt-1">Shield activated 🛡️</div>}
-                  {feedback.correct && <div className="text-sm sm:text-base text-white mt-2">Correct: <span className="font-bold">{feedback.correct}</span></div>}
+                  {feedback.correct && <div className="text-sm sm:text-base text-white mt-2">Correct: <span className="font-bold"><MathText>{feedback.correct}</MathText></span></div>}
                   {feedback.hint && <div className="text-xs sm:text-sm text-white/90 mt-1">💡 {feedback.hint}</div>}
                 </div>
               ) : (
@@ -1993,7 +2107,7 @@ export default function App() {
                   {shuffled.map((ans, i) => (
                     <button key={i} onClick={() => handleAnswer(ans)}
                       className="bg-white hover:bg-yellow-200 active:scale-95 active:bg-yellow-300 text-slate-900 font-mono font-black text-base sm:text-lg md:text-xl px-3 py-4 sm:py-5 md:py-6 rounded-xl shadow-lg border-2 border-slate-900 transition-all touch-manipulation">
-                      {ans}
+                      <MathText>{ans}</MathText>
                     </button>
                   ))}
                 </div>
@@ -2007,6 +2121,8 @@ export default function App() {
           .animate-pulse-fast { animation: pulse-fast 0.6s ease-in-out infinite; }
           .text-shadow { text-shadow: 0 0 3px rgba(0,0,0,0.9); }
           canvas { background: #000; touch-action: none; }
+          .math-sup { font-size: 0.62em; vertical-align: super; line-height: 0; margin-left: 0.5px; }
+          .math-sub { font-size: 0.62em; vertical-align: sub; line-height: 0; margin-left: 0.5px; }
         `}</style>
       </div>
     );
