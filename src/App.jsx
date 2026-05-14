@@ -74,6 +74,9 @@ function MathText({ children, className = '' }) {
   return <span className={className}>{nodes}</span>;
 }
 
+// Parent feedback survey — opens when the "Give Feedback" button is tapped.
+const SURVEY_URL = 'https://www.surveymonkey.com/r/5JGZFDY';
+
 const QUESTIONS = {
   linear: {
     name: 'Linear Equations', short: 'Linear', color: '#3b82f6',
@@ -379,6 +382,8 @@ export default function App() {
   const [soundOn, setSoundOn] = useState(true);
   const [bestStreak, setBestStreak] = useState(0);
   const [activePowerups, setActivePowerups] = useState({ shield: 0, rapid: 0, triple: 0 });
+  // Parent disclaimer — shows every time the game loads, before the menu
+  const [showDisclaimer, setShowDisclaimer] = useState(true);
   
   // Exam Simulator state
   const [examTimer, setExamTimer] = useState(EXAM_TIMER_SECONDS);
@@ -1639,7 +1644,39 @@ export default function App() {
   // ========== MENU ==========
   if (screen === 'menu') {
     return (
-      <div className="w-full h-screen min-h-[600px] bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center overflow-hidden relative">
+      <div className="w-full h-screen min-h-[600px] bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center overflow-hidden relative" style={{ height: '100dvh' }}>
+        {/* PARENT DISCLAIMER — shows on every load, before the menu */}
+        {showDisclaimer && (
+          <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+            <div className="bg-gradient-to-br from-slate-800 to-slate-900 border-2 border-cyan-400/50 rounded-2xl shadow-2xl max-w-md w-full p-5 sm:p-6 my-auto">
+              <div className="inline-block px-3 py-1 mb-3 bg-amber-500/20 border border-amber-400 rounded-full text-amber-300 text-[10px] font-bold tracking-widest">
+                A QUICK NOTE FOR PARENTS
+              </div>
+              <h2 className="text-xl sm:text-2xl font-black text-white mb-3 leading-tight">
+                Welcome to Algebra Assault
+              </h2>
+              <div className="text-slate-300 text-sm space-y-2.5 mb-5">
+                <p>
+                  This is a <span className="text-cyan-300 font-semibold">free practice tool from MathCoach</span>, built to make Grade 10 algebra revision feel less like a chore.
+                </p>
+                <p>
+                  It's a <span className="text-white font-semibold">supplement to learning, not a replacement</span> for teaching or tutoring. Questions follow the IEB Grade 10 curriculum — always check your child's specific test scope with their teacher.
+                </p>
+                <p>
+                  This is an <span className="text-amber-300 font-semibold">early test version</span>. If something looks wrong or breaks, that feedback is exactly what we need. Thank you for testing it.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowDisclaimer(false)}
+                className="w-full bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-400 hover:to-purple-400 active:scale-95 text-white font-black text-lg py-3.5 rounded-xl shadow-lg border-2 border-white/20 transition-all touch-manipulation">
+                Got it — Let's Play
+              </button>
+              <div className="text-center text-slate-500 text-[11px] mt-3">
+                MathCoach · IEB Grade 10 Mathematics
+              </div>
+            </div>
+          </div>
+        )}
         {Array.from({ length: 50 }).map((_, i) => (
           <div key={i} className="absolute rounded-full bg-white animate-twinkle"
             style={{
@@ -1683,6 +1720,11 @@ export default function App() {
             {soundOn ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
             Sound: {soundOn ? 'ON' : 'OFF'}
           </button>
+          
+          <a href={SURVEY_URL} target="_blank" rel="noopener noreferrer"
+            className="mt-3 inline-block bg-amber-500/20 hover:bg-amber-500/30 active:scale-95 border border-amber-400/60 text-amber-200 font-bold text-sm px-5 py-2.5 rounded-xl transition-all touch-manipulation">
+            💬 Give Feedback
+          </a>
         </div>
         
         <style>{`
@@ -2195,55 +2237,4 @@ export default function App() {
             <button onClick={() => startMission(topic)} className="bg-white/10 hover:bg-white/20 text-white font-bold px-5 py-2.5 rounded-xl flex items-center justify-center gap-2 text-sm touch-manipulation">
               <RotateCcw className="w-4 h-4" /> Replay
             </button>
-            <button onClick={() => setScreen('topicSelect')} className="text-slate-300 hover:text-white text-xs">Choose Sector</button>
-          </div>
-        </div>
-        
-        <style>{`
-          @keyframes confetti { 0% { transform: translateY(-10vh) rotate(0); } 100% { transform: translateY(110vh) rotate(720deg); } }
-          .animate-confetti { animation: confetti linear infinite; }
-          @keyframes bounce-slow { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
-          .animate-bounce-slow { animation: bounce-slow 1.5s ease-in-out infinite; }
-          @keyframes pulse-slow { 0%, 100% { box-shadow: 0 0 20px rgba(251, 191, 36, 0.4); } 50% { box-shadow: 0 0 40px rgba(251, 191, 36, 0.8); } }
-          .animate-pulse-slow { animation: pulse-slow 2s ease-in-out infinite; }
-        `}</style>
-      </div>
-    );
-  }
-  
-  // ========== GAME OVER ==========
-  if (screen === 'gameOver') {
-    return (
-      <div className="w-full h-screen min-h-[600px] bg-gradient-to-br from-red-900 via-slate-900 to-black flex items-center justify-center p-4">
-        <div className="text-center max-w-md w-full">
-          <div className="text-7xl mb-3 animate-pulse">💥</div>
-          <h2 className="text-4xl font-black text-red-400 mb-1">SHIP DOWN</h2>
-          <p className="text-slate-300 mb-5 text-sm">No worries — every miss is data. Try again!</p>
-          
-          <div className="bg-white/10 backdrop-blur-md rounded-2xl p-5 mb-4 border border-white/20">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <div className="text-[10px] text-slate-400 uppercase">{bossActive ? 'Boss Phase' : 'Wave'}</div>
-                <div className="text-xl font-black text-white">{bossActive ? `${getMaxBossHp(topic) - bossHp + 1}/${getMaxBossHp(topic)}` : `${waveNumber}/${WAVES_BEFORE_BOSS}`}</div>
-              </div>
-              <div>
-                <div className="text-[10px] text-slate-400 uppercase">Score</div>
-                <div className="text-xl font-black text-white">{score}</div>
-              </div>
-            </div>
-          </div>
-          
-          <div className="flex flex-col gap-2">
-            <button onClick={() => startMission(topic)} className="bg-gradient-to-r from-emerald-500 to-cyan-600 text-white font-black px-6 py-3 rounded-xl text-base hover:scale-105 active:scale-95 transition-all shadow-xl flex items-center justify-center gap-2 touch-manipulation">
-              <RotateCcw className="w-4 h-4" /> Try Again
-            </button>
-            <button onClick={() => setScreen('topicSelect')} className="bg-white/10 hover:bg-white/20 text-white font-bold px-5 py-2.5 rounded-xl text-sm touch-manipulation">Different Sector</button>
-            <button onClick={() => setScreen('menu')} className="text-slate-400 hover:text-white text-xs">Main Menu</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-  
-  return null;
-}
+            <button onClick={() => setScreen('topicSelect')} className="text-slate-300 ho
