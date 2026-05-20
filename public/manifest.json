@@ -1,0 +1,19 @@
+{
+  "name": "Algebra Assault — by MathCoach",
+  "short_name": "AlgebraAssault",
+  "description": "Master Grade 10 algebra through an arcade-style space shooter. 6 topics, boss fights, adaptive difficulty.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#1e1b4b",
+  "background_color": "#0f0a1e",
+  "categories": ["education", "games"],
+  "icons": [
+    { "src": "/icons/icon-192.svg", "sizes": "192x192", "type": "image/svg+xml" },
+    { "src": "/icons/icon-384.svg", "sizes": "384x384", "type": "image/svg+xml" },
+    { "src": "/icons/icon-512.svg", "sizes": "512x512", "type": "image/svg+xml" },
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-384.png", "sizes": "384x384", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
