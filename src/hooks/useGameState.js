@@ -9,7 +9,8 @@ import { createEventDispatcher } from '../game/eventDispatcher.js';
 import { setupCanvas, updateCanvasScale } from '../game/canvasSetup.js';
 import { shuffleAnswers } from '../utils/shuffleAnswers.js';
 import { recordSession } from '../utils/progressTracker.js';
-import { loadMistakes, recordMistake } from '../utils/mistakeJournal.js';
+import { loadMistakes, recordMistake, markResolved } from '../utils/mistakeJournal.js';
+import { evaluateGate, isExcludedTopic } from '../utils/replayGate.js';
 import { saveAdaptiveState, getAdaptiveLevel, updateAdaptiveState } from '../utils/adaptiveDifficulty.js';
 import { loadHighScores, saveHighScore } from '../utils/highScores.js';
 
@@ -59,6 +60,10 @@ export function useGameState({ soundOn, setSoundOn, activeProfile, adaptiveState
   const [examFeedback, setExamFeedback] = useState(null);
   const [examStartTs, setExamStartTs] = useState(0);
   const [examDuration, setExamDuration] = useState(0);
+
+  // Replay gate state
+  const [pendingTopic, setPendingTopic] = useState(null);
+  const [replayQueue, setReplayQueue] = useState([]);
 
   const missionStartTsRef = useRef(0);
   const questionDifficultiesRef = useRef([]);
@@ -176,8 +181,31 @@ export function useGameState({ soundOn, setSoundOn, activeProfile, adaptiveState
     return breakdown;
   };
 
-  const startMission = (t) => {
+  const startMission = async (t) => {
     if (t === 'exam') { startExam(); return; }
+
+    // Excluded topics bypass the replay gate entirely
+    if (isExcludedTopic(t)) {
+      startMissionDirect(t);
+      return;
+    }
+
+    // Check replay gate: load mistakes and evaluate
+    const allMistakes = await loadMistakes();
+    const { shouldActivate, queue } = evaluateGate(allMistakes, t);
+
+    if (shouldActivate) {
+      setPendingTopic(t);
+      setReplayQueue(queue);
+      setScreen('replayGate');
+      return;
+    }
+
+    // Gate did not activate — proceed with mission directly
+    startMissionDirect(t);
+  };
+
+  const startMissionDirect = (t) => {
     let qs, difficulties;
     if (t === 'ultimate') {
       const regularTopics = PLAYABLE_TOPICS.filter(x => x !== 'ultimate');
@@ -224,6 +252,22 @@ export function useGameState({ soundOn, setSoundOn, activeProfile, adaptiveState
     game.activePowerups = { shield: 0, rapid: 0, triple: 0 };
     game.pendingHpChange = 0; game.pendingNuke = false;
     setScreen('playing');
+  };
+
+  // Handle replay gate completion: persist resolved statuses, reload mistakes, start pending mission
+  const handleReplayComplete = async (resolvedItems) => {
+    // Persist resolved status for each item (fire-and-forget on failure per req 6.3)
+    for (const { topic: mistakeTopic, timestamp } of resolvedItems) {
+      await markResolved(mistakeTopic, timestamp).catch(() => {});
+    }
+    // Reload mistakes state
+    const updated = await loadMistakes();
+    setMistakes(updated);
+    // Start the originally requested mission
+    const topicToStart = pendingTopic;
+    setPendingTopic(null);
+    setReplayQueue([]);
+    startMissionDirect(topicToStart);
   };
 
   const startBoss = () => {
@@ -567,6 +611,8 @@ export function useGameState({ soundOn, setSoundOn, activeProfile, adaptiveState
     bestStreak, activePowerups, reducedMotion,
     // Exam state
     examTimer, examLives, examCorrect, examFeedback, examDuration,
+    // Replay gate state
+    pendingTopic, replayQueue, handleReplayComplete,
     // UI state
     showDisclaimer, showLanding, setShowLanding,
     // Handlers
