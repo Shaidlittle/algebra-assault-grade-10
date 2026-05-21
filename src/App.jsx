@@ -15,6 +15,7 @@ import { ReviewScreen } from './screens/ReviewScreen.jsx';
 import { DailyChallengeScreen } from './screens/DailyChallengeScreen.jsx';
 import { OnboardingScreen } from './screens/OnboardingScreen.jsx';
 import { ProfileScreen } from './screens/ProfileScreen.jsx';
+import { ReplayGateScreen } from './screens/ReplayGateScreen.jsx';
 
 export default function App() {
   const [soundOn, setSoundOn] = useState(true);
@@ -53,6 +54,7 @@ export default function App() {
     bossActive, bossHp, showQuestion, feedback, paused, setPaused,
     bestStreak, activePowerups, reducedMotion,
     examTimer, examLives, examCorrect, examFeedback, examDuration,
+    replayQueue, handleReplayComplete,
     showDisclaimer, showLanding, setShowLanding,
     startMission, startExam, handleAnswer, handleExamAnswer,
     handleTeachMe, handleDismissTeachMe, handleDismissDisclaimer,
@@ -130,6 +132,16 @@ export default function App() {
         streak={streakData.currentStreak}
         soundOn={soundOn}
         setScreen={setScreen}
+      />
+    );
+  }
+
+  if (screen === 'replayGate') {
+    return (
+      <ReplayGateScreen
+        queue={replayQueue}
+        onComplete={handleReplayComplete}
+        soundOn={soundOn}
       />
     );
   }
