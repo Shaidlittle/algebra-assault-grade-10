@@ -1,23 +1,49 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Heart, Timer } from 'lucide-react';
 import { MathText } from '../components/MathText.jsx';
+import { DiagnosticMessage } from '../components/DiagnosticMessage.jsx';
 import { EXAM_TIMER_SECONDS, EXAM_QUESTION_COUNT, EXAM_LIVES, EXAM_LOW_TIMER, EXAM_CRITICAL_TIMER } from '../constants.js';
-import { shuffleAnswers } from '../utils/shuffleAnswers.js';
+import { shuffleAnswers, getDisplayValue } from '../utils/shuffleAnswers.js';
+import { getDiagnosticMessage } from '../data/errorCatalog.js';
+import { resolveHints } from '../data/hintResolver.js';
+import { formatHintButtonLabel } from '../data/hintCosts.js';
+import { ExplainPrompt } from '../components/ExplainPrompt.jsx';
 
-function ExamFeedbackPanel({ examFeedback, question, onDismiss }) {
+function ExamFeedbackPanel({ examFeedback, question, onDismiss, hintStage, onRequestHint }) {
   const [visibleSteps, setVisibleSteps] = useState(0);
+  const resolvedHints = resolveHints(question);
   const steps = question?.steps && question.steps.length > 0 ? question.steps : null;
-  const showSteps = (examFeedback.type === 'wrong' || examFeedback.type === 'timeout') && steps;
+
+  const isWrongAnswer = examFeedback.type === 'wrong' || examFeedback.type === 'timeout';
+  const hasProgressiveHints = isWrongAnswer && resolvedHints !== null;
+  const isDegradedHints = hasProgressiveHints && (resolvedHints[0] === null || resolvedHints[1] === null);
+
+  const showStepsFallback = isWrongAnswer && !hasProgressiveHints && steps;
+  const solutionSteps = hasProgressiveHints && resolvedHints[2] ? resolvedHints[2] : steps;
+  const showFullSolution = hasProgressiveHints && (hintStage === 3 || isDegradedHints);
 
   useEffect(() => {
-    if (!showSteps) return;
+    const shouldAnimate = showStepsFallback || showFullSolution;
+    if (!shouldAnimate || !solutionSteps) return;
     setVisibleSteps(0);
     let count = 0;
-    const timers = steps.map((_, i) =>
+    const timers = solutionSteps.map((_, i) =>
       setTimeout(() => { count++; setVisibleSteps(count); }, (i + 1) * 400)
     );
     return () => timers.forEach(clearTimeout);
-  }, [showSteps, steps]);
+  }, [showStepsFallback, showFullSolution, solutionSteps]);
+
+  const getHintButton = () => {
+    if (!hasProgressiveHints || isDegradedHints) return null;
+    if (hintStage >= 3) return null;
+    const label = formatHintButtonLabel('exam', hintStage);
+    return (
+      <button onClick={() => onRequestHint('exam')}
+        className="bg-blue-500/40 hover:bg-blue-500/60 active:scale-95 text-white font-bold px-5 py-2.5 rounded-xl border border-blue-400/50 transition-all touch-manipulation text-sm">
+        💡 {label}
+      </button>
+    );
+  };
 
   return (
     <div className={`max-w-2xl mx-auto w-full text-center p-4 sm:p-5 rounded-2xl border-2 ${
@@ -27,8 +53,54 @@ function ExamFeedbackPanel({ examFeedback, question, onDismiss }) {
     } animate-pulse-fast`}>
       <div className="text-2xl sm:text-3xl font-black text-white mb-1">{examFeedback.text}</div>
       {examFeedback.points && <div className="text-base sm:text-lg font-bold text-yellow-300">+{examFeedback.points} <span className="text-xs text-white/70">(+{examFeedback.time}s bonus)</span></div>}
+      {isWrongAnswer && <DiagnosticMessage message={examFeedback.diagnosticMessage} />}
       {examFeedback.correct && examFeedback.type !== 'correct' && <div className="text-sm sm:text-base text-white mt-2">Correct: <span className="font-bold"><MathText>{examFeedback.correct}</MathText></span></div>}
-      {showSteps ? (
+
+      {/* Progressive Hint Flow */}
+      {hasProgressiveHints && !isDegradedHints && (
+        <div className="mt-3 space-y-2">
+          {hintStage >= 1 && resolvedHints[0] && (
+            <div className="bg-blue-500/20 border border-blue-400/40 rounded-xl p-3 text-left">
+              <div className="text-[10px] uppercase tracking-wider text-blue-300 font-bold mb-1">💭 Think about it...</div>
+              <div className="text-sm text-white/90">{resolvedHints[0]}</div>
+            </div>
+          )}
+          {hintStage >= 2 && resolvedHints[1] && (
+            <div className="bg-blue-500/20 border border-blue-400/40 rounded-xl p-3 text-left">
+              <div className="text-[10px] uppercase tracking-wider text-blue-300 font-bold mb-1">🎯 Specific guidance</div>
+              <div className="text-sm text-white/90">{resolvedHints[1]}</div>
+            </div>
+          )}
+          {hintStage >= 3 && solutionSteps && (
+            <div className="bg-blue-500/20 border border-blue-400/40 rounded-xl p-3 text-left">
+              <div className="text-[10px] uppercase tracking-wider text-blue-300 font-bold mb-1">📝 Full solution</div>
+              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                {solutionSteps.map((step, i) => (
+                  <div key={i} className={`flex gap-2 items-start text-xs sm:text-sm text-white/90 transition-all duration-300 ${i < visibleSteps ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}`}>
+                    <span className="bg-white/20 rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-bold flex-shrink-0">{i + 1}</span>
+                    <span>{step}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Degraded hints: show full solution directly */}
+      {hasProgressiveHints && isDegradedHints && solutionSteps && (
+        <div className="mt-3 text-left space-y-1.5 max-h-48 overflow-y-auto">
+          {solutionSteps.map((step, i) => (
+            <div key={i} className={`flex gap-2 items-start text-xs sm:text-sm text-white/90 transition-all duration-300 ${i < visibleSteps ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}`}>
+              <span className="bg-white/20 rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-bold flex-shrink-0">{i + 1}</span>
+              <span>{step}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Fallback: no progressive hints */}
+      {showStepsFallback ? (
         <div className="mt-3 text-left space-y-1.5 max-h-48 overflow-y-auto">
           {steps.map((step, i) => (
             <div key={i} className={`flex gap-2 items-start text-xs sm:text-sm text-white/90 transition-all duration-300 ${i < visibleSteps ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}`}>
@@ -38,24 +110,30 @@ function ExamFeedbackPanel({ examFeedback, question, onDismiss }) {
           ))}
         </div>
       ) : (
-        examFeedback.hint && <div className="text-xs sm:text-sm text-white/90 mt-1">💡 {examFeedback.hint}</div>
+        !hasProgressiveHints && examFeedback.hint && <div className="text-xs sm:text-sm text-white/90 mt-1">💡 {examFeedback.hint}</div>
       )}
+
       {examFeedback.livesLeft !== undefined && (
         <div className="text-xs sm:text-sm text-red-200 mt-2 font-bold">
           {examFeedback.livesLeft > 0 ? `${examFeedback.livesLeft} ${examFeedback.livesLeft === 1 ? 'life' : 'lives'} remaining` : 'No lives left — exam over'}
         </div>
       )}
-      {examFeedback.teachMe && onDismiss && (
-        <button onClick={onDismiss}
-          className="mt-4 bg-white/20 hover:bg-white/30 active:scale-95 text-white font-bold px-6 py-2.5 rounded-xl border border-white/30 transition-all touch-manipulation">
-          Continue →
-        </button>
+
+      {/* Action buttons for wrong/timeout answers */}
+      {isWrongAnswer && onDismiss && (
+        <div className="mt-4 flex flex-wrap gap-2 justify-center">
+          {getHintButton()}
+          <button onClick={onDismiss}
+            className="bg-white/20 hover:bg-white/30 active:scale-95 text-white font-bold px-6 py-2.5 rounded-xl border border-white/30 transition-all touch-manipulation">
+            Continue →
+          </button>
+        </div>
       )}
     </div>
   );
 }
 
-export function ExamScreen({ questions, qIdx, score, examTimer, examLives, examFeedback, soundOn, handleExamAnswer, setScreen, gameRef, onTeachMe, onDismissTeachMe }) {
+export function ExamScreen({ questions, qIdx, score, examTimer, examLives, examFeedback, soundOn, handleExamAnswer, setScreen, gameRef, onTeachMe, onDismissTeachMe, hintStage, onRequestHint, explainPromptData, explainPaused, onExplainResponse }) {
   const [shakeOffset, setShakeOffset] = useState(0);
   const [flashOpacity, setFlashOpacity] = useState(0);
   const [flashColor, setFlashColor] = useState('#ef4444');
@@ -205,18 +283,21 @@ export function ExamScreen({ questions, qIdx, score, examTimer, examLives, examF
 
         {/* Feedback or Answers */}
         {examFeedback ? (
-          <ExamFeedbackPanel examFeedback={examFeedback} question={q} onDismiss={onDismissTeachMe} />
+          <ExamFeedbackPanel examFeedback={examFeedback} question={q} onDismiss={onDismissTeachMe} hintStage={hintStage} onRequestHint={onRequestHint} />
         ) : (
           <div className="max-w-2xl mx-auto w-full">
             <div className="grid grid-cols-2 gap-2 sm:gap-3">
-              {shuffled.map((ans, i) => (
-                <button key={i} onClick={() => handleExamAnswer(ans)}
-                  className="bg-white hover:bg-yellow-200 active:scale-95 active:bg-yellow-300 text-slate-900 font-mono font-black text-base sm:text-lg md:text-xl px-3 py-4 sm:py-5 md:py-6 rounded-xl shadow-lg border-2 border-slate-900 transition-all touch-manipulation">
-                  <MathText>{ans}</MathText>
-                </button>
-              ))}
+              {shuffled.map((ans, i) => {
+                const display = getDisplayValue(ans);
+                return (
+                  <button key={i} onClick={() => handleExamAnswer(display)}
+                    className="bg-white hover:bg-yellow-200 active:scale-95 active:bg-yellow-300 text-slate-900 font-mono font-black text-base sm:text-lg md:text-xl px-3 py-4 sm:py-5 md:py-6 rounded-xl shadow-lg border-2 border-slate-900 transition-all touch-manipulation">
+                    <MathText>{display}</MathText>
+                  </button>
+                );
+              })}
             </div>
-            {q.steps && q.steps.length > 0 && onTeachMe && (
+            {q.steps && q.steps.length > 0 && onTeachMe && hintStage === 0 && (
               <button onClick={() => onTeachMe(q)}
                 className="mt-3 w-full bg-purple-600/60 hover:bg-purple-500/70 active:scale-95 text-white font-bold text-sm py-2.5 rounded-xl border border-purple-400/40 transition-all touch-manipulation">
                 💡 Teach Me
@@ -225,6 +306,16 @@ export function ExamScreen({ questions, qIdx, score, examTimer, examLives, examF
           </div>
         )}
       </div>
+
+      {/* Explain Your Answer prompt overlay — exam timer is paused via explainPaused */}
+      {explainPromptData && (
+        <ExplainPrompt
+          prompt={explainPromptData.prompt}
+          options={explainPromptData.options}
+          correctIndex={explainPromptData.correctIndex}
+          onComplete={onExplainResponse}
+        />
+      )}
 
       <style>{`
         @keyframes pulse-fast { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.04); opacity: 0.85; } }

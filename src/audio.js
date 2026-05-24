@@ -7,15 +7,50 @@
  * Uses a shared AudioContext singleton to avoid exhausting browser
  * AudioContext limits or triggering throttling on repeated playback.
  *
+ * Sound preference persistence:
+ *   Audio playback is blocked until the saved sound preference has been
+ *   loaded from storage. Call `initSoundPreference()` on app startup to
+ *   restore the preference and unblock playback.
+ *
  * Supported sound types:
  *   "shoot", "kill", "correct", "wrong", "hit", "levelUp",
  *   "boss", "powerup", "nuke", "heal", "tick", "tickHigh"
  */
 
+import { loadSoundPreference, saveSoundPreference } from './utils/soundPreference.js';
+
 let sharedCtx = null;
+
+/**
+ * Whether the sound preference has been loaded from storage.
+ * Playback is blocked until this is true.
+ */
+let preferenceLoaded = false;
+
+/**
+ * Initialize sound preference from storage.
+ * Must be called on app startup before any audio should play.
+ * Returns the saved preference (true = enabled, false = muted).
+ * @returns {Promise<boolean>}
+ */
+export async function initSoundPreference() {
+  const pref = await loadSoundPreference();
+  preferenceLoaded = true;
+  return pref;
+}
+
+/**
+ * Persist the sound preference immediately when toggled.
+ * @param {boolean} enabled
+ */
+export function persistSoundPreference(enabled) {
+  saveSoundPreference(enabled);
+}
 
 export const playSound = (type, enabled) => {
   if (!enabled) return;
+  // Block playback until the saved preference has been restored
+  if (!preferenceLoaded) return;
   try {
     // Lazily create the AudioContext on first enabled call
     if (!sharedCtx) {
@@ -65,9 +100,18 @@ export const playSound = (type, enabled) => {
 };
 
 /**
- * Reset the shared AudioContext (for testing purposes).
+ * Reset the shared AudioContext and preference state (for testing purposes).
  * This allows tests to verify singleton behavior by clearing state between test runs.
  */
 export const _resetAudioContext = () => {
   sharedCtx = null;
+  preferenceLoaded = false;
+};
+
+/**
+ * Mark the preference as loaded (for testing purposes).
+ * Allows tests to bypass the preference gate without async storage calls.
+ */
+export const _setPreferenceLoaded = (loaded) => {
+  preferenceLoaded = loaded;
 };

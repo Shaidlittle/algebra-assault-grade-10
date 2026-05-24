@@ -7,18 +7,28 @@ import { getDailyQuestions, updateStreak } from './dailyChallenge.js';
  */
 
 describe('Daily Challenge', () => {
-  // Minimal question bank for testing
+  // Minimal question bank for testing — needs enough questions for 7 daily (2 easy + 3 medium + 2 hard)
   const mockQuestionsBank = {
     linear: {
+      easy: [
+        { q: 'Solve x + 1 = 3', answers: ['x=2', 'x=1', 'x=3', 'x=4'] },
+        { q: 'Solve x + 2 = 5', answers: ['x=3', 'x=2', 'x=4', 'x=5'] },
+        { q: 'Solve x + 4 = 7', answers: ['x=3', 'x=4', 'x=2', 'x=1'] },
+      ],
       medium: [
         { q: 'Solve 2x + 3 = 7', answers: ['x=2', 'x=3', 'x=4', 'x=5'] },
         { q: 'Solve x - 1 = 4', answers: ['x=5', 'x=3', 'x=4', 'x=6'] },
+        { q: 'Solve 3x = 9', answers: ['x=3', 'x=6', 'x=9', 'x=1'] },
       ],
       hard: [
         { q: 'Solve 3x + 2 = 11', answers: ['x=3', 'x=4', 'x=2', 'x=5'] },
+        { q: 'Solve 5x - 3 = 12', answers: ['x=3', 'x=2', 'x=4', 'x=5'] },
       ],
     },
     quadratic: {
+      easy: [
+        { q: 'Solve x² = 4', answers: ['x=±2', 'x=2', 'x=4', 'x=±4'] },
+      ],
       medium: [
         { q: 'Solve x² = 9', answers: ['x=±3', 'x=3', 'x=9', 'x=±9'] },
         { q: 'Solve x² - 4 = 0', answers: ['x=±2', 'x=2', 'x=4', 'x=±4'] },
@@ -28,6 +38,9 @@ describe('Daily Challenge', () => {
       ],
     },
     exponential: {
+      easy: [
+        { q: 'Simplify 2²', answers: ['4', '2', '6', '8'] },
+      ],
       medium: [
         { q: 'Simplify 2³', answers: ['8', '6', '9', '12'] },
       ],
@@ -38,7 +51,7 @@ describe('Daily Challenge', () => {
   };
 
   describe('37.2: Daily challenge determinism and constraints', () => {
-    it('same date always produces the same 3 questions', () => {
+    it('same date always produces the same 7 questions', () => {
       fc.assert(
         fc.property(
           fc.integer({ min: 2024, max: 2030 }),
@@ -56,7 +69,7 @@ describe('Daily Challenge', () => {
       );
     });
 
-    it('always returns exactly 3 questions', () => {
+    it('always returns exactly 7 questions', () => {
       fc.assert(
         fc.property(
           fc.integer({ min: 2024, max: 2030 }),
@@ -65,14 +78,14 @@ describe('Daily Challenge', () => {
           (year, month, day) => {
             const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             const result = getDailyQuestions(dateStr, mockQuestionsBank);
-            expect(result).toHaveLength(3);
+            expect(result).toHaveLength(7);
           }
         ),
         { numRuns: 200 }
       );
     });
 
-    it('each question has a topic field and difficulty of medium or hard', () => {
+    it('each question has a topic field and difficulty of easy, medium, or hard', () => {
       fc.assert(
         fc.property(
           fc.integer({ min: 2024, max: 2030 }),
@@ -84,7 +97,7 @@ describe('Daily Challenge', () => {
 
             for (const q of result) {
               expect(q.topic).toBeDefined();
-              expect(['medium', 'hard']).toContain(q.difficulty);
+              expect(['easy', 'medium', 'hard']).toContain(q.difficulty);
             }
           }
         ),

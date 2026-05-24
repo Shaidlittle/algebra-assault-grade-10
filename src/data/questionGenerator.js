@@ -325,7 +325,7 @@ export function generateExpExpr(difficulty) {
         return {
           q: `x${toSuperscript(a)} × x${toSuperscript(b)}`,
           a: `x${toSuperscript(result)}`,
-          wrong: generateDistractors(`x${toSuperscript(result)}`, 'expExpr', difficulty),
+          wrong: generateDistractors(`x${toSuperscript(result)}`, 'expExpr', difficulty, { subtype: 'same_base_multiply', expA: a, expB: b }),
           hint: 'Multiplying same base → ADD exponents',
           steps: [
             'Same base multiplication: add exponents',
@@ -355,7 +355,7 @@ export function generateExpExpr(difficulty) {
         return {
           q: `(x${toSuperscript(a)})${toSuperscript(b)}`,
           a: `x${toSuperscript(result)}`,
-          wrong: generateDistractors(`x${toSuperscript(result)}`, 'expExpr', difficulty),
+          wrong: generateDistractors(`x${toSuperscript(result)}`, 'expExpr', difficulty, { subtype: 'power_of_power', expA: a, expB: b }),
           hint: 'Power of a power → MULTIPLY exponents',
           steps: [
             'Power of a power: multiply exponents',
@@ -375,7 +375,7 @@ export function generateExpExpr(difficulty) {
       return {
         q: `(${a}x${toSuperscript(m)})${toSuperscript(n)}`,
         a: `${coeff}x${toSuperscript(exp)}`,
-        wrong: generateDistractors(`${coeff}x${toSuperscript(exp)}`, 'expExpr', difficulty),
+        wrong: generateDistractors(`${coeff}x${toSuperscript(exp)}`, 'expExpr', difficulty, { subtype: 'power_of_power', expA: m, expB: n, coeff }),
         hint: `Raise BOTH the ${a} and the x${toSuperscript(m)} to the power of ${n}`,
         steps: [
           `Raise the coefficient: ${a}${toSuperscript(n)} = ${coeff}`,
@@ -399,7 +399,7 @@ export function generateExpExpr(difficulty) {
       return {
         q: `(${a}x${toSuperscript(m)})${toSuperscript(n)} × ${b}x${toSuperscript(p)}`,
         a: `${finalCoeff}x${toSuperscript(finalExp)}`,
-        wrong: generateDistractors(`${finalCoeff}x${toSuperscript(finalExp)}`, 'expExpr', difficulty),
+        wrong: generateDistractors(`${finalCoeff}x${toSuperscript(finalExp)}`, 'expExpr', difficulty, { subtype: 'power_of_power', expA: m, expB: n, coeff: finalCoeff }),
         hint: `(${a}x${toSuperscript(m)})${toSuperscript(n)} = ${coeff1}x${toSuperscript(exp1)}, then × ${b}x${toSuperscript(p)}`,
         steps: [
           `Evaluate (${a}x${toSuperscript(m)})${toSuperscript(n)} = ${coeff1}x${toSuperscript(exp1)}`,
@@ -691,61 +691,90 @@ function toSuperscript(n) {
 
 // --- Distractor Generation ---
 
-export function generateDistractors(correctAnswer, topic, difficulty) {
-  const distractors = new Set();
+/**
+ * @param {string} correctAnswer
+ * @param {string} topic
+ * @param {string} difficulty
+ * @param {object} [meta] - Optional metadata for context-aware distractor generation
+ * @param {string} [meta.subtype] - Question subtype (e.g., 'power_of_power', 'same_base_multiply')
+ * @param {number} [meta.expA] - First exponent value
+ * @param {number} [meta.expB] - Second exponent value
+ * @returns {Array<{value: string, tag: string}>} Array of 3 tagged distractor objects
+ */
+export function generateDistractors(correctAnswer, topic, difficulty, meta) {
+  const distractors = [];
+  const seenValues = new Set();
   let attempts = 0;
 
-  while (distractors.size < 3 && attempts < 30) {
+  while (distractors.length < 3 && attempts < 30) {
     attempts++;
-    const d = generateSingleDistractor(correctAnswer, topic, difficulty, distractors.size);
-    if (d && d !== correctAnswer && !distractors.has(d)) {
-      distractors.add(d);
+    const d = generateSingleDistractor(correctAnswer, topic, difficulty, distractors.length, meta);
+    if (d && d.value && d.value !== correctAnswer && !seenValues.has(d.value)) {
+      seenValues.add(d.value);
+      distractors.push(d);
     }
   }
 
   // Fallback: if we couldn't generate 3 unique distractors, add simple variations
-  if (distractors.size < 3) {
+  if (distractors.length < 3) {
     const fallbacks = generateFallbackDistractors(correctAnswer, topic);
     for (const f of fallbacks) {
-      if (distractors.size >= 3) break;
-      if (f !== correctAnswer && !distractors.has(f)) {
-        distractors.add(f);
+      if (distractors.length >= 3) break;
+      if (f.value !== correctAnswer && !seenValues.has(f.value)) {
+        seenValues.add(f.value);
+        distractors.push(f);
       }
     }
   }
 
-  return [...distractors].slice(0, 3);
+  return distractors.slice(0, 3);
 }
 
-function generateSingleDistractor(correctAnswer, topic, difficulty, index) {
+/**
+ * Generates a single tagged distractor object.
+ * @returns {{value: string, tag: string}|null}
+ */
+function generateSingleDistractor(correctAnswer, topic, difficulty, index, meta) {
   if (topic === 'simultaneous') {
     return generateSimultaneousDistractor(correctAnswer, index);
   }
   if (topic === 'expExpr') {
-    return generateExpExprDistractor(correctAnswer, index);
+    return generateExpExprDistractor(correctAnswer, index, meta);
   }
 
   // Extract numeric value(s) from answer
   const pmMatch = correctAnswer.match(/x = ±(\d+)/);
   if (pmMatch) {
     const n = parseInt(pmMatch[1]);
-    const errors = [n + 1, n - 1, n * 2, n * n, Math.max(1, Math.floor(n / 2))];
-    const pick = errors[index % errors.length];
-    if (pick === n) return `x = ${n}`;
-    return `x = ±${pick}`;
+    // index 0: single_root_only (only one root shown)
+    // index 1: off_by_one
+    // index 2+: arithmetic_error
+    const errorPatterns = [
+      { value: `x = ${n}`, tag: 'single_root_only' },
+      { value: `x = ±${n + 1}`, tag: 'off_by_one' },
+      { value: `x = ±${n * 2}`, tag: 'arithmetic_error' },
+      { value: `x = ±${n * n}`, tag: 'arithmetic_error' },
+      { value: `x = ±${Math.max(1, Math.floor(n / 2))}`, tag: 'arithmetic_error' }
+    ];
+    const pick = errorPatterns[index % errorPatterns.length];
+    if (pick.value === correctAnswer) {
+      // Fallback if the generated value matches correct
+      return { value: `x = ${n}`, tag: 'single_root_only' };
+    }
+    return pick;
   }
 
   const orMatch = correctAnswer.match(/x = (.+) or (.+)/);
   if (orMatch) {
     const v1 = orMatch[1].trim();
     const v2 = orMatch[2].trim();
-    // Common errors: sign flip, swap
-    const errors = [
-      `x = ${flipNum(v1)} or ${flipNum(v2)}`,
-      `x = ${v1} or ${flipNum(v2)}`,
-      `x = ${flipNum(v1)} or ${v2}`
+    // Common errors: single root only, sign flip on both, sign flip on one
+    const errorPatterns = [
+      { value: `x = ${v1}`, tag: 'single_root_only' },
+      { value: `x = ${flipNum(v1)} or ${flipNum(v2)}`, tag: 'sign_error' },
+      { value: `x = ${v1} or ${flipNum(v2)}`, tag: 'sign_error' }
     ];
-    return errors[index % errors.length];
+    return errorPatterns[index % errorPatterns.length];
   }
 
   // For inequality answers like "x > 4"
@@ -755,12 +784,12 @@ function generateSingleDistractor(correctAnswer, topic, difficulty, index) {
     const val = ineqMatch[2].trim();
     const numVal = parseFloat(val);
     if (!isNaN(numVal)) {
-      const errors = [
-        `x ${flipSign(sign)} ${val}`,
-        `x ${sign} ${numVal + randInt(1, 3)}`,
-        `x ${sign} ${-numVal}`
+      const errorPatterns = [
+        { value: `x ${flipSign(sign)} ${val}`, tag: topic === 'inequality' ? 'sign_flip_forgotten' : 'sign_error' },
+        { value: `x ${sign} ${numVal + randInt(1, 3)}`, tag: 'arithmetic_error' },
+        { value: `x ${sign} ${-numVal}`, tag: 'sign_error' }
       ];
-      return errors[index % errors.length];
+      return errorPatterns[index % errorPatterns.length];
     }
   }
 
@@ -771,15 +800,17 @@ function generateSingleDistractor(correctAnswer, topic, difficulty, index) {
     const numVal = parseFloat(val.replace('−', '-'));
     if (!isNaN(numVal)) {
       const intVal = Math.round(numVal);
-      const errors = [
-        `x = ${intVal + randInt(1, 3)}`,
-        `x = ${intVal - randInt(1, 3)}`,
-        `x = ${-intVal}`
+      const offset1 = randInt(1, 3);
+      const offset2 = randInt(1, 3);
+      const errorPatterns = [
+        { value: `x = ${intVal + offset1}`, tag: offset1 === 1 ? 'off_by_one' : 'arithmetic_error' },
+        { value: `x = ${intVal - offset2}`, tag: offset2 === 1 ? 'off_by_one' : 'arithmetic_error' },
+        { value: `x = ${-intVal}`, tag: 'sign_error' }
       ];
-      return errors[index % errors.length];
+      return errorPatterns[index % errorPatterns.length];
     }
     // Non-numeric (fraction etc)
-    return `x = ${randInt(1, 9)}`;
+    return { value: `x = ${randInt(1, 9)}`, tag: 'general_miscalculation' };
   }
 
   return null;
@@ -787,18 +818,44 @@ function generateSingleDistractor(correctAnswer, topic, difficulty, index) {
 
 function generateSimultaneousDistractor(correctAnswer, index) {
   const match = correctAnswer.match(/\((.+),\s*(.+)\)/);
-  if (!match) return `(${randInt(1,9)}, ${randInt(1,9)})`;
+  if (!match) return { value: `(${randInt(1,9)}, ${randInt(1,9)})`, tag: 'general_miscalculation' };
   const x = parseInt(match[1]);
   const y = parseInt(match[2]);
-  const errors = [
-    `(${y}, ${x})`,
-    `(${x + 1}, ${y - 1})`,
-    `(${x - 1}, ${y + 1})`
+  const errorPatterns = [
+    { value: `(${y}, ${x})`, tag: 'swapped_variables' },
+    { value: `(${x + 1}, ${y - 1})`, tag: 'arithmetic_error' },
+    { value: `(${x - 1}, ${y + 1})`, tag: 'arithmetic_error' }
   ];
-  return errors[index % errors.length];
+  return errorPatterns[index % errorPatterns.length];
 }
 
-function generateExpExprDistractor(correctAnswer, index) {
+function generateExpExprDistractor(correctAnswer, index, meta) {
+  // If we have metadata about the question type, generate specific error-pattern distractors first
+  if (meta && index === 0) {
+    if (meta.subtype === 'power_of_power' && meta.expA != null && meta.expB != null) {
+      // Common mistake: adding exponents instead of multiplying
+      const errorExp = meta.expA + meta.expB;
+      const correctExp = meta.expA * meta.expB;
+      // Skip if error value equals correct answer
+      if (errorExp !== correctExp) {
+        const coeff = meta.coeff || 1;
+        const value = `${coeff > 1 ? coeff : ''}x${toSuperscript(errorExp)}`;
+        return { value, tag: 'exponents_added_not_multiplied' };
+      }
+    }
+    if (meta.subtype === 'same_base_multiply' && meta.expA != null && meta.expB != null) {
+      // Common mistake: multiplying exponents instead of adding
+      const errorExp = meta.expA * meta.expB;
+      const correctExp = meta.expA + meta.expB;
+      // Skip if error value equals correct answer
+      if (errorExp !== correctExp) {
+        const coeff = meta.coeff || 1;
+        const value = `${coeff > 1 ? coeff : ''}x${toSuperscript(errorExp)}`;
+        return { value, tag: 'exponents_multiplied_not_added' };
+      }
+    }
+  }
+
   // Try to parse x^n format
   const match = correctAnswer.match(/^(\d*)x(.+)$/);
   if (match) {
@@ -807,16 +864,15 @@ function generateExpExprDistractor(correctAnswer, index) {
     // Parse superscript back to number
     const expNum = parseSuperscript(expStr);
     if (expNum !== null) {
-      const errors = [
-        `${coeff}x${toSuperscript(expNum + 1)}`,
-        `${coeff}x${toSuperscript(Math.max(1, expNum - 1))}`,
-        `${coeff * 2}x${toSuperscript(expNum)}`
+      const errorPatterns = [
+        { value: `${coeff}x${toSuperscript(expNum + 1)}`.replace(/^1x/, 'x'), tag: 'exponents_added_not_multiplied' },
+        { value: `${coeff}x${toSuperscript(Math.max(1, expNum - 1))}`.replace(/^1x/, 'x'), tag: 'exponents_multiplied_not_added' },
+        { value: `${coeff * 2}x${toSuperscript(expNum)}`.replace(/^1x/, 'x'), tag: 'arithmetic_error' }
       ];
-      // Remove leading 1 coefficient
-      return errors[index % errors.length].replace(/^1x/, 'x');
+      return errorPatterns[index % errorPatterns.length];
     }
   }
-  return `x${toSuperscript(randInt(2, 12))}`;
+  return { value: `x${toSuperscript(randInt(2, 12))}`, tag: 'general_miscalculation' };
 }
 
 function parseSuperscript(str) {
@@ -838,11 +894,11 @@ function generateFallbackDistractors(correctAnswer, topic) {
   const results = [];
   for (let i = 1; i <= 5; i++) {
     if (topic === 'simultaneous') {
-      results.push(`(${randInt(1, 9)}, ${randInt(1, 9)})`);
+      results.push({ value: `(${randInt(1, 9)}, ${randInt(1, 9)})`, tag: 'general_miscalculation' });
     } else if (topic === 'expExpr') {
-      results.push(`x${toSuperscript(randInt(2, 15))}`);
+      results.push({ value: `x${toSuperscript(randInt(2, 15))}`, tag: 'general_miscalculation' });
     } else {
-      results.push(`x = ${randInt(-9, 9)}`);
+      results.push({ value: `x = ${randInt(-9, 9)}`, tag: 'general_miscalculation' });
     }
   }
   return results;
@@ -855,9 +911,15 @@ export function validateQuestion(question) {
   if (typeof question.q !== 'string' || question.q.length === 0) return false;
   if (typeof question.a !== 'string' || question.a.length === 0) return false;
   if (!Array.isArray(question.wrong) || question.wrong.length !== 3) return false;
-  if (question.wrong.some(w => typeof w !== 'string' || w.length === 0)) return false;
+  // Support both plain strings and {value, tag} objects
+  const wrongValues = question.wrong.map(w => {
+    if (typeof w === 'string') return w;
+    if (w && typeof w === 'object' && typeof w.value === 'string') return w.value;
+    return null;
+  });
+  if (wrongValues.some(v => v === null || v.length === 0)) return false;
   // Check all wrong answers are distinct from correct and from each other
-  const allAnswers = new Set([question.a, ...question.wrong]);
+  const allAnswers = new Set([question.a, ...wrongValues]);
   if (allAnswers.size !== 4) return false;
   if (typeof question.hint !== 'string' || question.hint.length === 0) return false;
   if (!Array.isArray(question.steps)) return false;

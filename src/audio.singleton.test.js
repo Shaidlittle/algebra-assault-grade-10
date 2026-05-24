@@ -8,6 +8,7 @@ import * as fc from 'fast-check';
 describe('AudioContext', () => {
   let playSound;
   let _resetAudioContext;
+  let _setPreferenceLoaded;
   let constructionCount;
   let mockCtx;
   let shouldThrow;
@@ -50,7 +51,10 @@ describe('AudioContext', () => {
     const audioModule = await import('./audio.js');
     playSound = audioModule.playSound;
     _resetAudioContext = audioModule._resetAudioContext;
+    _setPreferenceLoaded = audioModule._setPreferenceLoaded;
+    // Reset state and mark preference as loaded so playSound doesn't bail early
     _resetAudioContext();
+    _setPreferenceLoaded(true);
     constructionCount = 0;
   });
 
@@ -65,6 +69,7 @@ describe('AudioContext', () => {
           fc.integer({ min: 2, max: 10 }),
           (callCount) => {
             _resetAudioContext();
+            _setPreferenceLoaded(true);
             constructionCount = 0;
 
             for (let i = 0; i < callCount; i++) {
@@ -81,6 +86,7 @@ describe('AudioContext', () => {
 
     it('different sound types all use the same AudioContext', () => {
       _resetAudioContext();
+      _setPreferenceLoaded(true);
       constructionCount = 0;
 
       const soundTypes = ['shoot', 'kill', 'hit', 'wrong', 'tick', 'tickHigh'];
@@ -96,6 +102,7 @@ describe('AudioContext', () => {
   describe('24.3: AudioContext retry after creation failure', () => {
     it('retries AudioContext creation on next call after initial failure', () => {
       _resetAudioContext();
+      _setPreferenceLoaded(true);
       constructionCount = 0;
       shouldThrow = true;
 
@@ -110,6 +117,7 @@ describe('AudioContext', () => {
 
     it('after successful retry, subsequent calls reuse the context', () => {
       _resetAudioContext();
+      _setPreferenceLoaded(true);
       constructionCount = 0;
       shouldThrow = true;
 

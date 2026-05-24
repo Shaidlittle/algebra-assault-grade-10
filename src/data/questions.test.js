@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
 import { QUESTIONS } from './questions.js';
+import { ERROR_CATALOG } from './errorCatalog.js';
 
 /**
- * **Validates: Requirements 1.1**
+ * **Validates: Requirements 1.1, 3.1, 3.2, 3.3, 3.4**
  *
  * Property 1: Question data structure invariant
  *
@@ -11,7 +12,7 @@ import { QUESTIONS } from './questions.js';
  * isExam set to true), the topic object SHALL contain name (string), short (string),
  * color (string), bgColor (string), icon (string), and three arrays easy, medium,
  * hard where every element has fields q (string), a (string), wrong (array of
- * exactly 3 strings), and hint (string).
+ * exactly 3 tagged distractor objects), and hint (string).
  */
 describe('Question data structure invariant', () => {
   // Get all topic keys that are not ultimate or exam
@@ -56,7 +57,14 @@ describe('Question data structure invariant', () => {
           expect(Array.isArray(question.wrong)).toBe(true);
           expect(question.wrong).toHaveLength(3);
           for (const w of question.wrong) {
-            expect(typeof w).toBe('string');
+            // Each distractor is a tagged object with value and tag
+            expect(typeof w).toBe('object');
+            expect(w).not.toBeNull();
+            expect(typeof w.value).toBe('string');
+            expect(typeof w.tag).toBe('string');
+            expect(w.tag.length).toBeGreaterThan(0);
+            // Tag must exist in the Error Catalog
+            expect(ERROR_CATALOG).toHaveProperty(w.tag);
           }
           expect(typeof question.hint).toBe('string');
         }

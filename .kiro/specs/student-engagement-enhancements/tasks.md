@@ -6,8 +6,8 @@ This plan implements 13 engagement features for Algebra Assault across new utili
 
 ## Tasks
 
-- [ ] 1. Implement core utility modules (foundation layer)
-  - [ ] 1.1 Create `src/utils/questionGenerator.js` with `createRNG`, `solveLinearEquation`, `generateQuestion`, and `generateQuestionSet`
+- [x] 1. Implement core utility modules (foundation layer)
+  - [x] 1.1 Create `src/utils/questionGenerator.js` with `createRNG`, `solveLinearEquation`, `generateQuestion`, and `generateQuestionSet`
     - Implement seeded mulberry32 PRNG returning [0,1)
     - Implement linear equation solver that parses equation strings and returns solutions
     - Implement `generateQuestion` producing question objects with `q`, `a`, `wrong` (3 distractors), `hint`, `steps`, `conceptual` fields
@@ -22,7 +22,7 @@ This plan implements 13 engagement features for Algebra Assault across new utili
     - **Property 3: Question generation uniqueness** — For any seed/topic/difficulty, generating 200 questions produces 200 distinct equations
     - **Validates: Requirements 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 12.3**
 
-  - [ ] 1.3 Create `src/utils/streakSaver.js` with `updateStreakSaver`, `resetStreakSaver`, and `STREAK_THRESHOLD`
+  - [x] 1.3 Create `src/utils/streakSaver.js` with `updateStreakSaver`, `resetStreakSaver`, and `STREAK_THRESHOLD`
     - Implement state machine: track `consecutiveWrong`, activate at threshold of 3
     - Return `{ newState, shouldActivate }` from `updateStreakSaver`
     - Reset counter to 0 on activation regardless of chosen option
@@ -33,7 +33,7 @@ This plan implements 13 engagement features for Algebra Assault across new utili
     - **Property 8: Streak saver difficulty reduction** — When activated on medium/hard, easier version is exactly one tier lower
     - **Validates: Requirements 3.1, 3.3, 3.5**
 
-  - [ ] 1.5 Create `src/utils/encouragement.js` with message pool and selection functions
+  - [x] 1.5 Create `src/utils/encouragement.js` with message pool and selection functions
     - Implement `ENCOURAGEMENT_POOL` with at least 20 unique messages across categories (general, comeback, streak)
     - Implement `getEncouragementMessage(lastMessageId)` — random selection avoiding consecutive repeats
     - Implement `getComebackMessage()` — returns comeback-category message
@@ -45,8 +45,8 @@ This plan implements 13 engagement features for Algebra Assault across new utili
     - **Property 10: Comeback and streak celebration triggers** — Correct after wrong streak returns comeback message; streak ≥5 returns celebration
     - **Validates: Requirements 4.1, 4.2, 4.3, 4.5**
 
-- [ ] 2. Implement scheduling and goal utility modules
-  - [ ] 2.1 Create `src/utils/spacedRepetition.js` with interval progression and schedule management
+- [x] 2. Implement scheduling and goal utility modules
+  - [x] 2.1 Create `src/utils/spacedRepetition.js` with interval progression and schedule management
     - Implement `INTERVALS` constant (stage1: 1 day, stage2: 3 days, stage3: 7 days in ms)
     - Implement `scheduleNewMistake(mistake)` — creates entry with stage1 interval
     - Implement `advanceInterval(entry)` — stage1→stage2→stage3→null (resolved)
@@ -60,7 +60,7 @@ This plan implements 13 engagement features for Algebra Assault across new utili
     - **Property 13: Due questions retrieval** — getDueQuestions returns exactly entries where nextReview ≤ now
     - **Validates: Requirements 7.1, 7.2, 7.3, 7.4**
 
-  - [ ] 2.3 Create `src/utils/weeklyGoals.js` with goal tracking and cosmetic rewards
+  - [x] 2.3 Create `src/utils/weeklyGoals.js` with goal tracking and cosmetic rewards
     - Implement `COSMETIC_REWARDS` array with 12 distinct rewards (ship skins + trail colors)
     - Implement `getCurrentWeekStart()` — returns Monday midnight ISO date
     - Implement `checkWeekReset(state)` — clears progress if weekStart is in a previous week
@@ -74,7 +74,7 @@ This plan implements 13 engagement features for Algebra Assault across new utili
     - **Property 16: Weekly goal completion and reward** — All objectives met with <12 rewards unlocked returns completed:true with new reward; all 12 unlocked awards bonus XP
     - **Validates: Requirements 5.1, 5.3, 5.5**
 
-  - [ ] 2.5 Create `src/utils/friendChallenge.js` with encode/decode and validation
+  - [x] 2.5 Create `src/utils/friendChallenge.js` with encode/decode and validation
     - Implement `encodeChallenge(params)` — encodes topic (3-bit), difficulty (2-bit), seed (16-bit), score (12-bit) into base64url string ≤30 chars
     - Implement `decodeChallenge(code)` — decodes back to params, returns null for invalid codes
     - Implement `isValidChallengeCode(code)` — structural validation (URL-safe chars, correct length)
@@ -86,8 +86,8 @@ This plan implements 13 engagement features for Algebra Assault across new utili
     - **Property 6: Challenge code validation** — Random invalid strings decode to null; valid encoded strings decode to non-null
     - **Validates: Requirements 6.1, 6.2, 6.3, 6.5**
 
-- [ ] 3. Implement remaining utility modules
-  - [ ] 3.1 Create `src/utils/improvementToast.js` with accuracy and streak detection
+- [x] 3. Implement remaining utility modules
+  - [x] 3.1 Create `src/utils/improvementToast.js` with accuracy and streak detection
     - Implement `checkImprovementToast(progressData, topic, currentAccuracy)` — returns show:true when rolling avg improves by ≥10 percentage points
     - Implement `checkStreakRecord(currentStreak, previousBest)` — returns show:true when current exceeds previous best
     - Skip toast if fewer than 10 questions answered for topic
@@ -97,23 +97,23 @@ This plan implements 13 engagement features for Algebra Assault across new utili
     - **Property 17: Improvement detection** — 10+ point accuracy improvement returns show:true; new best streak returns show:true
     - **Validates: Requirements 10.1, 10.2**
 
-  - [ ] 3.3 Create `src/utils/soundPreference.js` with load/save functions
+  - [x] 3.3 Create `src/utils/soundPreference.js` with load/save functions
     - Implement `loadSoundPreference()` — reads from `window.storage`, defaults to true if not found
     - Implement `saveSoundPreference(enabled)` — persists immediately via `window.storage`
     - Wrap in try/catch with fallback to enabled
     - _Requirements: 11.1, 11.2, 11.3_
 
-  - [ ] 3.4 Create `src/utils/conceptualExplanations.js` with technique mapping and explanations
+  - [x] 3.4 Create `src/utils/conceptualExplanations.js` with technique mapping and explanations
     - Implement `TECHNIQUES` object covering: isolating-variables, expanding-brackets, cross-multiplication, factoring, completing-the-square
     - Implement `getConceptualExplanation(technique)` — returns explanation text or null
     - Implement `identifyTechnique(question)` — maps question to its primary technique key
     - _Requirements: 12.1, 12.2, 12.3, 12.4_
 
-- [ ] 4. Checkpoint - Core utilities complete
+- [x] 4. Checkpoint - Core utilities complete
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 5. Implement new screen components
-  - [ ] 5.1 Create `src/screens/PracticeModeScreen.jsx`
+- [x] 5. Implement new screen components
+  - [x] 5.1 Create `src/screens/PracticeModeScreen.jsx`
     - Topic selector (specific topic or "mixed") before starting
     - Single question display with 4 answer options (keyboard 1-4 and touch support)
     - Full step-by-step solution reveal on answer (correct or incorrect)
@@ -130,7 +130,7 @@ This plan implements 13 engagement features for Algebra Assault across new utili
     - **Property 11: Practice mode answer effects** — Incorrect answers leave HP/score unchanged; correct answers award exactly 50% XP (rounded down); feedback always includes correctness + steps
     - **Validates: Requirements 1.2, 1.3, 1.6**
 
-  - [ ] 5.3 Create `src/screens/QuickFiveScreen.jsx`
+  - [x] 5.3 Create `src/screens/QuickFiveScreen.jsx`
     - 5 random questions from all topics (uses `questionGenerator.js`)
     - Progress indicator (1/5, 2/5, etc.)
     - No shooter gameplay, no timer
@@ -144,7 +144,7 @@ This plan implements 13 engagement features for Algebra Assault across new utili
     - **Property 18: Quick Five session summary** — For any 5 answers, correct count equals number correct, accuracy = (correct/5)*100, XP = correctCount × standard rate
     - **Validates: Requirements 9.1, 9.3, 9.4**
 
-  - [ ] 5.5 Create `src/screens/FriendChallengeScreen.jsx`
+  - [x] 5.5 Create `src/screens/FriendChallengeScreen.jsx`
     - Two sub-views: "Create Challenge" and "Enter Code"
     - Create flow: complete questions → generate code via `encodeChallenge` → display code with copy button
     - Enter flow: input field → validate via `isValidChallengeCode` → decode → play same questions → compare scores side by side
@@ -153,7 +153,7 @@ This plan implements 13 engagement features for Algebra Assault across new utili
     - Responsive layout
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 13.1, 13.2, 13.3, 13.4_
 
-  - [ ] 5.6 Create `src/screens/WeeklyGoalsScreen.jsx`
+  - [x] 5.6 Create `src/screens/WeeklyGoalsScreen.jsx`
     - Progress bars for each objective (questions correct, sessions started, daily challenges)
     - Countdown timer to weekly reset (next Monday midnight)
     - Unlocked cosmetic rewards gallery
@@ -161,8 +161,8 @@ This plan implements 13 engagement features for Algebra Assault across new utili
     - Responsive layout
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.6, 13.1, 13.4_
 
-- [ ] 6. Implement shared UI components
-  - [ ] 6.1 Create `src/components/SpacedRepetitionPrompt.jsx`
+- [x] 6. Implement shared UI components
+  - [x] 6.1 Create `src/components/SpacedRepetitionPrompt.jsx`
     - Modal/overlay shown on game load when reviews are due (from `getDueQuestions`)
     - "Review Now" and "Skip" options
     - Question display with answer feedback
@@ -170,25 +170,25 @@ This plan implements 13 engagement features for Algebra Assault across new utili
     - Persists updated schedule via `saveSchedule`
     - _Requirements: 7.1, 7.2, 7.3, 7.4_
 
-  - [ ] 6.2 Create `src/components/ImprovementToast.jsx`
+  - [x] 6.2 Create `src/components/ImprovementToast.jsx`
     - Fixed-position toast notification (non-blocking, pointer-events: none on container)
     - Auto-dismiss after 4 seconds via setTimeout (with cleanup on unmount)
     - Slide-in animation (respects `prefers-reduced-motion`)
     - Accepts `message` and `type` props
     - _Requirements: 10.1, 10.2, 10.3, 10.4_
 
-  - [ ] 6.3 Create `src/components/EncouragementBanner.jsx`
+  - [x] 6.3 Create `src/components/EncouragementBanner.jsx`
     - Inline message below answer feedback area
     - Displays motivational text from encouragement system
     - Supports general, comeback, and streak celebration variants
     - Non-intrusive: does not block proceeding to next question
     - _Requirements: 4.1, 4.3, 4.4, 4.5_
 
-- [ ] 7. Checkpoint - New screens and components complete
+- [~] 7. Checkpoint - New screens and components complete
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 8. Modify existing modules and wire everything together
-  - [ ] 8.1 Enhance `src/utils/dailyChallenge.js` to return 7 questions from 3+ topics with difficulty mix
+- [x] 8. Modify existing modules and wire everything together
+  - [x] 8.1 Enhance `src/utils/dailyChallenge.js` to return 7 questions from 3+ topics with difficulty mix
     - Update `getDailyQuestions()` to return 7 questions (2 easy, 3 medium, 2 hard) from ≥3 topics
     - Maintain date-seeded deterministic selection
     - Fall back to `questionGenerator.js` if static bank is insufficient
@@ -198,13 +198,13 @@ This plan implements 13 engagement features for Algebra Assault across new utili
     - **Property 14: Expanded daily challenge composition** — For any date string, returns exactly 7 questions from ≥3 topics with ≥2 easy, ≥3 medium, ≥2 hard; same date produces identical results
     - **Validates: Requirements 8.1, 8.2, 8.3**
 
-  - [ ] 8.3 Modify `src/audio.js` to integrate sound preference persistence
+  - [x] 8.3 Modify `src/audio.js` to integrate sound preference persistence
     - On module load, call `loadSoundPreference()` before creating AudioContext
     - Block all playback until preference is loaded
     - On toggle, call `saveSoundPreference(enabled)` immediately
     - _Requirements: 11.1, 11.2, 11.3_
 
-  - [ ] 8.4 Modify `src/App.jsx` to integrate all new features
+  - [x] 8.4 Modify `src/App.jsx` to integrate all new features
     - Add screen routing for PracticeModeScreen, QuickFiveScreen, FriendChallengeScreen, WeeklyGoalsScreen
     - Add menu buttons for Practice Mode, Quick Five, Friend Challenge, Weekly Goals
     - Integrate streak saver state tracking across shooter and practice modes
@@ -237,7 +237,7 @@ This plan implements 13 engagement features for Algebra Assault across new utili
     - Sound preference + audio module: preference blocks audio until loaded
     - _Requirements: 2.7, 7.5, 5.3, 3.6, 11.2_
 
-- [ ] 10. Final checkpoint - All features integrated and tested
+- [~] 10. Final checkpoint - All features integrated and tested
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes

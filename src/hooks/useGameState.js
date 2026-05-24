@@ -7,12 +7,16 @@ import { getReducedMotion, onReducedMotionChange } from '../utils/reducedMotion.
 import { updateGame, drawGame, triggerWrongAnswerFeedback } from '../game/engine.js';
 import { createEventDispatcher } from '../game/eventDispatcher.js';
 import { setupCanvas, updateCanvasScale } from '../game/canvasSetup.js';
-import { shuffleAnswers } from '../utils/shuffleAnswers.js';
+import { shuffleAnswers, getDisplayValue } from '../utils/shuffleAnswers.js';
+import { getDiagnosticMessage } from '../data/errorCatalog.js';
+import { getHintCost } from '../data/hintCosts.js';
 import { recordSession } from '../utils/progressTracker.js';
 import { loadMistakes, recordMistake, markResolved } from '../utils/mistakeJournal.js';
 import { evaluateGate, isExcludedTopic } from '../utils/replayGate.js';
 import { saveAdaptiveState, getAdaptiveLevel, updateAdaptiveState } from '../utils/adaptiveDifficulty.js';
 import { loadHighScores, saveHighScore } from '../utils/highScores.js';
+import { REMINDER_CARDS } from '../data/reminderCards.js';
+import { shouldTriggerExplain, BONUS_POINTS, COOLDOWN_THRESHOLD } from '../data/explainTrigger.js';
 
 /**
  * Hook managing all game-related state, refs, and logic.
@@ -46,6 +50,7 @@ export function useGameState({ soundOn, setSoundOn, activeProfile, adaptiveState
   const [bossHp, setBossHp] = useState(BOSS_HP);
   const [showQuestion, setShowQuestion] = useState(false);
   const [feedback, setFeedback] = useState(null);
+  const [hintStage, setHintStage] = useState(0); // 0=none, 1=conceptual, 2=specific, 3=full
   const [paused, setPaused] = useState(false);
   const [bestStreak, setBestStreak] = useState(0);
   const [activePowerups, setActivePowerups] = useState({ shield: 0, rapid: 0, triple: 0 });
@@ -64,6 +69,15 @@ export function useGameState({ soundOn, setSoundOn, activeProfile, adaptiveState
   // Replay gate state
   const [pendingTopic, setPendingTopic] = useState(null);
   const [replayQueue, setReplayQueue] = useState([]);
+
+  // Reminder card state
+  const [showReminderCard, setShowReminderCard] = useState(false);
+  const [reminderTopic, setReminderTopic] = useState(null);
+
+  // Explain prompt state
+  const [explainPromptData, setExplainPromptData] = useState(null);
+  const [explainCooldown, setExplainCooldown] = useState(0);
+  const [explainPaused, setExplainPaused] = useState(false);
 
   const missionStartTsRef = useRef(0);
   const questionDifficultiesRef = useRef([]);
@@ -120,7 +134,7 @@ export function useGameState({ soundOn, setSoundOn, activeProfile, adaptiveState
 
   // Sync flags to ref
   useEffect(() => { gameRef.current.bossActive = bossActive; }, [bossActive]);
-  useEffect(() => { gameRef.current.paused = paused || showQuestion || screen !== 'playing'; }, [paused, showQuestion, screen]);
+  useEffect(() => { gameRef.current.paused = paused || showQuestion || explainPaused || screen !== 'playing'; }, [paused, showQuestion, explainPaused, screen]);
   useEffect(() => { gameRef.current.soundOn = soundOn; }, [soundOn]);
   useEffect(() => { gameRef.current.waveNumber = waveNumber; }, [waveNumber]);
 
@@ -201,7 +215,14 @@ export function useGameState({ soundOn, setSoundOn, activeProfile, adaptiveState
       return;
     }
 
-    // Gate did not activate — proceed with mission directly
+    // For regular playable topics (not 'ultimate'), show reminder card before starting
+    if (t !== 'ultimate' && REMINDER_CARDS[t]) {
+      setReminderTopic(t);
+      setShowReminderCard(true);
+      return;
+    }
+
+    // Ultimate or topics without reminder card data — proceed directly
     startMissionDirect(t);
   };
 
@@ -241,6 +262,7 @@ export function useGameState({ soundOn, setSoundOn, activeProfile, adaptiveState
     setAliensKilled(0); setWaveNumber(1); setBossActive(false);
     setBossHp(getMaxBossHp(t)); setShowQuestion(false); setFeedback(null);
     setPaused(false); setBestStreak(0); setActivePowerups({ shield: 0, rapid: 0, triple: 0 });
+    setHintStage(0); setExplainCooldown(0); setExplainPromptData(null); setExplainPaused(false);
     if (bossQuestionTimerRef.current) clearTimeout(bossQuestionTimerRef.current);
     const game = gameRef.current;
     game.aliens = []; game.bullets = []; game.enemyBullets = [];
@@ -268,6 +290,12 @@ export function useGameState({ soundOn, setSoundOn, activeProfile, adaptiveState
     setPendingTopic(null);
     setReplayQueue([]);
     startMissionDirect(topicToStart);
+  };
+
+  // Handle reminder card dismiss: hide the card and start the mission
+  const handleReminderDismiss = () => {
+    setShowReminderCard(false);
+    startMissionDirect(reminderTopic);
   };
 
   const startBoss = () => {
@@ -298,12 +326,14 @@ export function useGameState({ soundOn, setSoundOn, activeProfile, adaptiveState
     }
     setTopic('exam'); setQuestions(qs); setQIdx(0); setScore(0);
     setExamTimer(EXAM_TIMER_SECONDS); setExamLives(EXAM_LIVES);
-    setExamCorrect(0); setExamFeedback(null);
+    setExamCorrect(0); setExamFeedback(null); setHintStage(0);
+    setExplainCooldown(0); setExplainPromptData(null); setExplainPaused(false);
     setExamStartTs(Date.now()); setExamDuration(0); setScreen('exam');
   };
 
   const advanceExam = (livesAfter) => {
     setExamFeedback(null);
+    setHintStage(0);
     const nextIdx = qIdx + 1;
     if (livesAfter <= 0 || nextIdx >= EXAM_QUESTION_COUNT) {
       const duration = Date.now() - examStartTs;
@@ -344,9 +374,12 @@ export function useGameState({ soundOn, setSoundOn, activeProfile, adaptiveState
       playSound('wrong', soundOn);
       triggerWrongAnswerFeedback(gameRef.current);
       recordMistake({ topic: 'exam', question: q, selectedAnswer: answer, correctAnswer: q.a, timestamp: Date.now() }).then(() => loadMistakes().then(setMistakes));
+      // Look up diagnostic message for the selected wrong answer
+      const distractor = (q.wrong || []).find(d => getDisplayValue(d) === answer);
+      const diagnosticMessage = distractor ? getDiagnosticMessage(distractor.tag) : null;
       setExamLives(prev => {
         const newLives = prev - 1;
-        setExamFeedback({ type: 'wrong', text: '✗ WRONG', correct: q.a, hint: q.hint, livesLeft: newLives });
+        setExamFeedback({ type: 'wrong', text: '✗ WRONG', correct: q.a, hint: q.hint, livesLeft: newLives, diagnosticMessage });
         setTimeout(() => advanceExam(newLives), 1800);
         return newLives;
       });
@@ -355,10 +388,10 @@ export function useGameState({ soundOn, setSoundOn, activeProfile, adaptiveState
 
   // Exam timer countdown
   useEffect(() => {
-    if (screen !== 'exam' || examFeedback || examTimer <= 0) return;
+    if (screen !== 'exam' || examFeedback || examTimer <= 0 || explainPaused) return;
     const t = setTimeout(() => setExamTimer(prev => Math.max(0, prev - 1)), 1000);
     return () => clearTimeout(t);
-  }, [screen, examTimer, examFeedback]);
+  }, [screen, examTimer, examFeedback, explainPaused]);
 
   // Exam tick sound when timer low
   useEffect(() => {
@@ -377,7 +410,7 @@ export function useGameState({ soundOn, setSoundOn, activeProfile, adaptiveState
     recordMistake({ topic: 'exam', question: q, selectedAnswer: '(timed out)', correctAnswer: q.a, timestamp: Date.now() }).then(() => loadMistakes().then(setMistakes));
     setExamLives(prev => {
       const newLives = prev - 1;
-      setExamFeedback({ type: 'timeout', text: '⏱ TIME UP!', correct: q.a, hint: q.hint, livesLeft: newLives });
+      setExamFeedback({ type: 'timeout', text: '⏱ TIME UP!', correct: q.a, hint: q.hint, livesLeft: newLives, diagnosticMessage: null });
       setTimeout(() => advanceExam(newLives), 1800);
       return newLives;
     });
@@ -393,10 +426,73 @@ export function useGameState({ soundOn, setSoundOn, activeProfile, adaptiveState
     }
   };
 
+  // Progressive Hint handler
+  const handleRequestHint = (gameMode) => {
+    const { amount } = getHintCost(gameMode, hintStage);
+
+    // Deduct cost based on game mode
+    if (gameMode === 'playing' || gameMode === 'dailyChallenge') {
+      // HP-based deduction
+      setHp(prev => {
+        const newHp = Math.max(0, prev - amount);
+        if (newHp <= 0) {
+          // Trigger game over after 2s delay
+          setTimeout(() => {
+            setShowQuestion(false);
+            setScreen('gameOver');
+          }, 2000);
+        }
+        return newHp;
+      });
+    } else if (gameMode === 'exam') {
+      // Point-based deduction, floor at 0
+      setScore(prev => Math.max(0, prev - amount));
+    }
+    // replayGate: no deduction (amount is 0)
+
+    // Advance hint stage
+    setHintStage(prev => Math.min(prev + 1, 3));
+  };
+
+  // Explain Your Answer response handler
+  const handleExplainResponse = ({ correct, bonusPoints }) => {
+    // Award bonus points if correct
+    if (correct) {
+      setScore(s => s + bonusPoints);
+    }
+    // Reset explain prompt state
+    setExplainPromptData(null);
+    setExplainPaused(false);
+    // Increment cooldown counter (tracks correct answers since last prompt)
+    setExplainCooldown(c => c + 1);
+
+    // Resume normal gameplay progression
+    const q = questions[qIdx % questions.length];
+    const restoreBossPhase = () => {
+      const game = gameRef.current;
+      if (game.bossActive && game.boss) {
+        game.boss.phaseHp = game.boss.maxPhaseHp;
+        game.triggerQuestion = false;
+        game.activePowerups.shield = Date.now() + BOSS_SHIELD_DURATION;
+      }
+    };
+
+    if (bossActive) {
+      setQIdx(qi => qi + 1); restoreBossPhase();
+    } else {
+      const nextQ = qIdx + 1;
+      if (nextQ >= WAVES_BEFORE_BOSS) {
+        setQIdx(nextQ); startBoss();
+      } else {
+        setQIdx(nextQ); setWaveNumber(w => w + 1); setAliensKilled(0); gameRef.current.killCount = 0;
+      }
+    }
+  };
+
   // Called when player clicks "Continue" after viewing Teach Me solution
   const handleDismissTeachMe = () => {
     if (screen === 'playing') {
-      setShowQuestion(false); setFeedback(null);
+      setShowQuestion(false); setFeedback(null); setHintStage(0);
       if (bossActive) {
         setQIdx(qi => qi + 1);
         const game = gameRef.current;
@@ -411,6 +507,7 @@ export function useGameState({ soundOn, setSoundOn, activeProfile, adaptiveState
         else { setQIdx(nextQ); setWaveNumber(w => w + 1); setAliensKilled(0); gameRef.current.killCount = 0; }
       }
     } else if (screen === 'exam') {
+      setHintStage(0);
       advanceExam(examLives);
     }
   };
@@ -560,7 +657,7 @@ export function useGameState({ soundOn, setSoundOn, activeProfile, adaptiveState
         setBossHp(newHp);
         if (newHp <= 0) {
           setTimeout(() => {
-            setShowQuestion(false); setFeedback(null);
+            setShowQuestion(false); setFeedback(null); setHintStage(0);
             const newCompleted = { ...completed, [topic]: true };
             setCompleted(newCompleted); saveProgress(newCompleted);
             playSound('levelUp', soundOn);
@@ -575,14 +672,68 @@ export function useGameState({ soundOn, setSoundOn, activeProfile, adaptiveState
           }, 1400);
           return;
         } else {
-          setTimeout(() => { setShowQuestion(false); setFeedback(null); setQIdx(qi => qi + 1); restoreBossPhase(); }, 1400);
+          setTimeout(() => {
+            setShowQuestion(false); setFeedback(null); setHintStage(0);
+            // Check if explain prompt should trigger
+            const hasExplainData = !!(q.explain && q.explain.prompt && q.explain.options && q.explain.options.length === 3);
+            const shouldExplain = shouldTriggerExplain({
+              gameMode: 'playing',
+              cooldownCount: explainCooldown + 1, // +1 for this correct answer
+              randomValue: Math.random(),
+              hasExplainData,
+            });
+            if (shouldExplain) {
+              setExplainCooldown(0); // Reset after triggering
+              setExplainPromptData(q.explain);
+              setExplainPaused(true);
+            } else {
+              setExplainCooldown(c => c + 1);
+              setQIdx(qi => qi + 1); restoreBossPhase();
+            }
+          }, 1400);
         }
       } else {
         const nextQ = qIdx + 1;
         if (nextQ >= WAVES_BEFORE_BOSS) {
-          setTimeout(() => { setShowQuestion(false); setFeedback(null); setQIdx(nextQ); startBoss(); }, 1400);
+          setTimeout(() => {
+            setShowQuestion(false); setFeedback(null); setHintStage(0);
+            // Check if explain prompt should trigger
+            const hasExplainData = !!(q.explain && q.explain.prompt && q.explain.options && q.explain.options.length === 3);
+            const shouldExplain = shouldTriggerExplain({
+              gameMode: 'playing',
+              cooldownCount: explainCooldown + 1,
+              randomValue: Math.random(),
+              hasExplainData,
+            });
+            if (shouldExplain) {
+              setExplainCooldown(0);
+              setExplainPromptData(q.explain);
+              setExplainPaused(true);
+            } else {
+              setExplainCooldown(c => c + 1);
+              setQIdx(nextQ); startBoss();
+            }
+          }, 1400);
         } else {
-          setTimeout(() => { setShowQuestion(false); setFeedback(null); setQIdx(nextQ); setWaveNumber(w => w + 1); setAliensKilled(0); gameRef.current.killCount = 0; }, 1400);
+          setTimeout(() => {
+            setShowQuestion(false); setFeedback(null); setHintStage(0);
+            // Check if explain prompt should trigger
+            const hasExplainData = !!(q.explain && q.explain.prompt && q.explain.options && q.explain.options.length === 3);
+            const shouldExplain = shouldTriggerExplain({
+              gameMode: 'playing',
+              cooldownCount: explainCooldown + 1,
+              randomValue: Math.random(),
+              hasExplainData,
+            });
+            if (shouldExplain) {
+              setExplainCooldown(0);
+              setExplainPromptData(q.explain);
+              setExplainPaused(true);
+            } else {
+              setExplainCooldown(c => c + 1);
+              setQIdx(nextQ); setWaveNumber(w => w + 1); setAliensKilled(0); gameRef.current.killCount = 0;
+            }
+          }, 1400);
         }
       }
     } else {
@@ -613,12 +764,19 @@ export function useGameState({ soundOn, setSoundOn, activeProfile, adaptiveState
     examTimer, examLives, examCorrect, examFeedback, examDuration,
     // Replay gate state
     pendingTopic, replayQueue, handleReplayComplete,
+    // Reminder card state
+    showReminderCard, reminderTopic, handleReminderDismiss,
+    // Explain prompt state
+    explainPromptData, explainPaused, handleExplainResponse,
     // UI state
     showDisclaimer, showLanding, setShowLanding,
     // Handlers
     startMission, startExam, handleAnswer, handleExamAnswer,
     handleTeachMe, handleDismissTeachMe, handleDismissDisclaimer,
     handleMouseMove, handleMouseDown, handleMouseLeave,
+    handleRequestHint,
+    // Progressive hint state
+    hintStage,
     // Dispatcher
     dispatcher,
   };

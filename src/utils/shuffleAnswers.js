@@ -1,4 +1,21 @@
 /**
+ * Extracts the display string from a distractor entry.
+ * Supports both legacy plain-string format and new object format.
+ * @param {string|{value: string, tag?: string}} distractor
+ * @returns {string}
+ */
+export function getDisplayValue(distractor) {
+  if (distractor === null || distractor === undefined) return '';
+  if (typeof distractor === 'string') return distractor;
+  if (typeof distractor === 'object' && distractor !== null) {
+    const val = distractor.value;
+    if (val === null || val === undefined) return '';
+    return String(val);
+  }
+  return String(distractor);
+}
+
+/**
  * Mulberry32 seeded PRNG.
  * Returns a function that produces floats in [0, 1) on each call.
  * @param {number} seed - Integer seed value
@@ -25,9 +42,10 @@ export function shuffleAnswers(answers, seed) {
   // Mix in a hash of the first answer to add entropy beyond just qIdx
   // This ensures different questions at the same index get different orderings
   let mixedSeed = seed;
-  if (answers.length > 0 && typeof answers[0] === 'string') {
-    for (let i = 0; i < answers[0].length; i++) {
-      mixedSeed = ((mixedSeed << 5) - mixedSeed + answers[0].charCodeAt(i)) | 0;
+  if (answers.length > 0) {
+    const displayStr = getDisplayValue(answers[0]);
+    for (let i = 0; i < displayStr.length; i++) {
+      mixedSeed = ((mixedSeed << 5) - mixedSeed + displayStr.charCodeAt(i)) | 0;
     }
   }
   const rng = mulberry32(mixedSeed);

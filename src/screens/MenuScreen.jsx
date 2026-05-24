@@ -6,7 +6,7 @@ import { EmailCaptureModal } from '../components/EmailCaptureModal.jsx';
 // Parent feedback survey — opens when the "Give Feedback" button is tapped.
 const SURVEY_URL = 'https://www.surveymonkey.com/r/5JGZFDY';
 
-export function MenuScreen({ soundOn, setSoundOn, setScreen, showDisclaimer, setShowDisclaimer, showLanding, onDismissLanding, onShowProgress, onShowReview, onStartDaily, dailyCompleted, streakData, level, levelProgress, activeProfile, onShowProfiles }) {
+export function MenuScreen({ soundOn, setSoundOn, setScreen, showDisclaimer, setShowDisclaimer, showLanding, onDismissLanding, onShowProgress, onShowReview, onStartDaily, onStartPractice, onStartQuickFive, onStartFriendChallenge, onShowWeeklyGoals, dailyCompleted, streakData, level, levelProgress, activeProfile, onShowProfiles }) {
   // PWA Install prompt state (Requirement 4.8)
   const [installReady, setInstallReady] = useState(!!window.__pwaInstallPrompt);
 
@@ -137,6 +137,34 @@ export function MenuScreen({ soundOn, setSoundOn, setScreen, showDisclaimer, set
 
         {/* Action buttons row */}
         <div className="mt-4 flex flex-wrap gap-2 justify-center">
+          {onStartPractice && (
+            <button onClick={onStartPractice}
+              className="bg-slate-800/60 hover:bg-slate-700/60 active:scale-95 border border-emerald-400/40 text-emerald-200 font-bold text-sm px-5 py-2.5 rounded-xl transition-all touch-manipulation">
+              📖 Practice Mode
+            </button>
+          )}
+
+          {onStartQuickFive && (
+            <button onClick={onStartQuickFive}
+              className="bg-slate-800/60 hover:bg-slate-700/60 active:scale-95 border border-cyan-400/40 text-cyan-200 font-bold text-sm px-5 py-2.5 rounded-xl transition-all touch-manipulation">
+              ⚡ Quick Five
+            </button>
+          )}
+
+          {onStartFriendChallenge && (
+            <button onClick={onStartFriendChallenge}
+              className="bg-slate-800/60 hover:bg-slate-700/60 active:scale-95 border border-pink-400/40 text-pink-200 font-bold text-sm px-5 py-2.5 rounded-xl transition-all touch-manipulation">
+              🤝 Friend Challenge
+            </button>
+          )}
+
+          {onShowWeeklyGoals && (
+            <button onClick={onShowWeeklyGoals}
+              className="bg-slate-800/60 hover:bg-slate-700/60 active:scale-95 border border-yellow-400/40 text-yellow-200 font-bold text-sm px-5 py-2.5 rounded-xl transition-all touch-manipulation">
+              🎯 Weekly Goals
+            </button>
+          )}
+
           {onShowReview && (
             <button onClick={onShowReview}
               className="bg-slate-800/60 hover:bg-slate-700/60 active:scale-95 border border-red-400/40 text-red-200 font-bold text-sm px-5 py-2.5 rounded-xl transition-all touch-manipulation">

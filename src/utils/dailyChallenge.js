@@ -1,3 +1,5 @@
+import { generateQuestionSet } from './questionGenerator.js';
+
 let STORAGE_KEY = 'default-daily-challenge';
 
 /**
@@ -42,11 +44,13 @@ export function getTodayString() {
 }
 
 /**
- * Get 3 daily challenge questions seeded by date.
- * Selects from medium and hard tiers across random topics.
+ * Get 7 daily challenge questions seeded by date.
+ * Selects from easy, medium, and hard tiers across at least 3 different topics.
+ * Difficulty mix: 2 easy, 3 medium, 2 hard.
+ * Falls back to questionGenerator if static bank is insufficient.
  * @param {string} dateString - YYYY-MM-DD format
  * @param {Object} questionsBank - The QUESTIONS object
- * @returns {Array} Array of 3 question objects with added `topic` field
+ * @returns {Array} Array of 7 question objects with added `topic` and `difficulty` fields
  */
 export function getDailyQuestions(dateString, questionsBank) {
   const rng = mulberry32(dateSeed(dateString));
@@ -54,26 +58,134 @@ export function getDailyQuestions(dateString, questionsBank) {
     k => !questionsBank[k].isUltimate && !questionsBank[k].isExam
   );
 
-  // Collect all medium and hard questions with topic annotation
-  const pool = [];
+  // Collect questions by difficulty tier with topic annotation
+  const easyPool = [];
+  const mediumPool = [];
+  const hardPool = [];
+
   for (const t of playableTopics) {
     const data = questionsBank[t];
+    if (data.easy) {
+      for (const q of data.easy) easyPool.push({ ...q, topic: t, difficulty: 'easy' });
+    }
     if (data.medium) {
-      for (const q of data.medium) pool.push({ ...q, topic: t, difficulty: 'medium' });
+      for (const q of data.medium) mediumPool.push({ ...q, topic: t, difficulty: 'medium' });
     }
     if (data.hard) {
-      for (const q of data.hard) pool.push({ ...q, topic: t, difficulty: 'hard' });
+      for (const q of data.hard) hardPool.push({ ...q, topic: t, difficulty: 'hard' });
     }
   }
 
-  // Fisher-Yates shuffle with seeded RNG, pick first 3
-  const shuffled = [...pool];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  // Fisher-Yates shuffle helper using seeded RNG
+  function shufflePool(pool) {
+    const arr = [...pool];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
   }
 
-  return shuffled.slice(0, 3);
+  // Shuffle each pool
+  const shuffledEasy = shufflePool(easyPool);
+  const shuffledMedium = shufflePool(mediumPool);
+  const shuffledHard = shufflePool(hardPool);
+
+  // Select: 2 easy, 3 medium, 2 hard
+  let easyPicks = shuffledEasy.slice(0, 2);
+  let mediumPicks = shuffledMedium.slice(0, 3);
+  let hardPicks = shuffledHard.slice(0, 2);
+
+  // Fall back to question generator if static bank is insufficient
+  if (easyPicks.length < 2 || mediumPicks.length < 3 || hardPicks.length < 2) {
+    try {
+      const seed = dateSeed(dateString);
+      const fallbackTopic = playableTopics[0] || 'linear';
+
+      if (easyPicks.length < 2) {
+        const needed = 2 - easyPicks.length;
+        const generated = generateQuestionSet(seed + 100, fallbackTopic, 'easy', needed);
+        easyPicks = [...easyPicks, ...generated.map(q => ({ ...q, topic: fallbackTopic, difficulty: 'easy' }))];
+      }
+      if (mediumPicks.length < 3) {
+        const needed = 3 - mediumPicks.length;
+        const generated = generateQuestionSet(seed + 200, fallbackTopic, 'medium', needed);
+        mediumPicks = [...mediumPicks, ...generated.map(q => ({ ...q, topic: fallbackTopic, difficulty: 'medium' }))];
+      }
+      if (hardPicks.length < 2) {
+        const needed = 2 - hardPicks.length;
+        const generated = generateQuestionSet(seed + 300, fallbackTopic, 'hard', needed);
+        hardPicks = [...hardPicks, ...generated.map(q => ({ ...q, topic: fallbackTopic, difficulty: 'hard' }))];
+      }
+    } catch (e) {
+      // If question generator fails, use whatever we have
+    }
+  }
+
+  // Combine all picks
+  let selected = [...easyPicks, ...mediumPicks, ...hardPicks];
+
+  // Ensure at least 3 different topics are represented
+  const topicsPresent = new Set(selected.map(q => q.topic));
+  if (topicsPresent.size < 3 && playableTopics.length >= 3) {
+    // Try to swap in questions from underrepresented topics
+    const missingTopics = playableTopics.filter(t => !topicsPresent.has(t));
+    for (const missingTopic of missingTopics) {
+      if (topicsPresent.size >= 3) break;
+      const data = questionsBank[missingTopic];
+      // Find a replacement question from the missing topic
+      let replacement = null;
+      let replaceDifficulty = null;
+
+      if (data.medium && data.medium.length > 0) {
+        replacement = { ...data.medium[Math.floor(rng() * data.medium.length)], topic: missingTopic, difficulty: 'medium' };
+        replaceDifficulty = 'medium';
+      } else if (data.easy && data.easy.length > 0) {
+        replacement = { ...data.easy[Math.floor(rng() * data.easy.length)], topic: missingTopic, difficulty: 'easy' };
+        replaceDifficulty = 'easy';
+      } else if (data.hard && data.hard.length > 0) {
+        replacement = { ...data.hard[Math.floor(rng() * data.hard.length)], topic: missingTopic, difficulty: 'hard' };
+        replaceDifficulty = 'hard';
+      }
+
+      if (replacement) {
+        // Find a question to replace — prefer one from a topic that has multiple entries
+        const topicCounts = {};
+        selected.forEach((q, i) => {
+          if (!topicCounts[q.topic]) topicCounts[q.topic] = [];
+          topicCounts[q.topic].push(i);
+        });
+
+        // Find a topic with more than 1 question and matching difficulty to swap
+        let swapIdx = -1;
+        for (const [topic, indices] of Object.entries(topicCounts)) {
+          if (indices.length > 1) {
+            // Prefer swapping same difficulty
+            const sameDiffIdx = indices.find(i => selected[i].difficulty === replaceDifficulty);
+            if (sameDiffIdx !== undefined) {
+              swapIdx = sameDiffIdx;
+              break;
+            }
+            swapIdx = indices[indices.length - 1];
+          }
+        }
+
+        if (swapIdx >= 0) {
+          selected[swapIdx] = replacement;
+          topicsPresent.add(missingTopic);
+        }
+      }
+    }
+  }
+
+  // Final shuffle to mix difficulties together
+  for (let i = selected.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [selected[i], selected[j]] = [selected[j], selected[i]];
+  }
+
+  // Ensure we return exactly 7 (trim if somehow we have more)
+  return selected.slice(0, 7);
 }
 
 /**

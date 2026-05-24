@@ -1,7 +1,130 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Flame } from 'lucide-react';
 import { MathText } from '../components/MathText.jsx';
-import { shuffleAnswers } from '../utils/shuffleAnswers.js';
+import { shuffleAnswers, getDisplayValue } from '../utils/shuffleAnswers.js';
+import { getDiagnosticMessage } from '../data/errorCatalog.js';
+import { DiagnosticMessage } from '../components/DiagnosticMessage.jsx';
+import { resolveHints } from '../data/hintResolver.js';
+import { formatHintButtonLabel } from '../data/hintCosts.js';
+import { ExplainPrompt } from '../components/ExplainPrompt.jsx';
+
+/**
+ * DailyChallengeFeedbackPanel — feedback panel with progressive hint support.
+ */
+function DailyChallengeFeedbackPanel({ feedback, question, onDismiss, hintStage, onRequestHint }) {
+  const [visibleSteps, setVisibleSteps] = useState(0);
+  const resolvedHints = resolveHints(question);
+  const steps = question?.steps && question.steps.length > 0 ? question.steps : null;
+
+  const isWrongAnswer = !feedback.correct;
+  const hasProgressiveHints = isWrongAnswer && resolvedHints !== null;
+  const isDegradedHints = hasProgressiveHints && (resolvedHints[0] === null || resolvedHints[1] === null);
+
+  const showStepsFallback = isWrongAnswer && !hasProgressiveHints && steps;
+  const solutionSteps = hasProgressiveHints && resolvedHints[2] ? resolvedHints[2] : steps;
+  const showFullSolution = hasProgressiveHints && (hintStage === 3 || isDegradedHints);
+
+  useEffect(() => {
+    const shouldAnimate = showStepsFallback || showFullSolution;
+    if (!shouldAnimate || !solutionSteps) return;
+    setVisibleSteps(0);
+    let count = 0;
+    const timers = solutionSteps.map((_, i) =>
+      setTimeout(() => { count++; setVisibleSteps(count); }, (i + 1) * 400)
+    );
+    return () => timers.forEach(clearTimeout);
+  }, [showStepsFallback, showFullSolution, solutionSteps]);
+
+  const getHintButton = () => {
+    if (!hasProgressiveHints || isDegradedHints) return null;
+    if (hintStage >= 3) return null;
+    const label = formatHintButtonLabel('dailyChallenge', hintStage);
+    return (
+      <button onClick={() => onRequestHint('dailyChallenge')}
+        className="bg-blue-500/40 hover:bg-blue-500/60 active:scale-95 text-white font-bold px-5 py-2.5 rounded-xl border border-blue-400/50 transition-all touch-manipulation text-sm">
+        💡 {label}
+      </button>
+    );
+  };
+
+  return (
+    <div className={`max-w-lg mx-auto w-full text-center p-4 rounded-2xl border-2 ${feedback.correct ? 'bg-emerald-500/30 border-emerald-300' : 'bg-red-500/30 border-red-300'} animate-pulse-fast`}>
+      <div className="text-2xl font-black text-white mb-1">{feedback.correct ? '✓ CORRECT!' : '✗ WRONG'}</div>
+      {isWrongAnswer && (
+        <>
+          <DiagnosticMessage message={feedback.diagnosticMessage} />
+          <div className="text-sm text-white mt-1">Correct: <span className="font-bold"><MathText>{feedback.correctAnswer}</MathText></span></div>
+        </>
+      )}
+
+      {/* Progressive Hint Flow */}
+      {hasProgressiveHints && !isDegradedHints && (
+        <div className="mt-3 space-y-2">
+          {hintStage >= 1 && resolvedHints[0] && (
+            <div className="bg-blue-500/20 border border-blue-400/40 rounded-xl p-3 text-left">
+              <div className="text-[10px] uppercase tracking-wider text-blue-300 font-bold mb-1">💭 Think about it...</div>
+              <div className="text-sm text-white/90">{resolvedHints[0]}</div>
+            </div>
+          )}
+          {hintStage >= 2 && resolvedHints[1] && (
+            <div className="bg-blue-500/20 border border-blue-400/40 rounded-xl p-3 text-left">
+              <div className="text-[10px] uppercase tracking-wider text-blue-300 font-bold mb-1">🎯 Specific guidance</div>
+              <div className="text-sm text-white/90">{resolvedHints[1]}</div>
+            </div>
+          )}
+          {hintStage >= 3 && solutionSteps && (
+            <div className="bg-blue-500/20 border border-blue-400/40 rounded-xl p-3 text-left">
+              <div className="text-[10px] uppercase tracking-wider text-blue-300 font-bold mb-1">📝 Full solution</div>
+              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                {solutionSteps.map((step, i) => (
+                  <div key={i} className={`flex gap-2 items-start text-xs sm:text-sm text-white/90 transition-all duration-300 ${i < visibleSteps ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}`}>
+                    <span className="bg-white/20 rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-bold flex-shrink-0">{i + 1}</span>
+                    <span>{step}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Degraded hints: show full solution directly */}
+      {hasProgressiveHints && isDegradedHints && solutionSteps && (
+        <div className="mt-3 text-left space-y-1.5 max-h-48 overflow-y-auto">
+          {solutionSteps.map((step, i) => (
+            <div key={i} className={`flex gap-2 items-start text-xs sm:text-sm text-white/90 transition-all duration-300 ${i < visibleSteps ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}`}>
+              <span className="bg-white/20 rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-bold flex-shrink-0">{i + 1}</span>
+              <span>{step}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Fallback: no progressive hints */}
+      {showStepsFallback && (
+        <div className="mt-3 text-left space-y-1.5 max-h-48 overflow-y-auto">
+          {steps.map((step, i) => (
+            <div key={i} className={`flex gap-2 items-start text-xs sm:text-sm text-white/90 transition-all duration-300 ${i < visibleSteps ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}`}>
+              <span className="bg-white/20 rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-bold flex-shrink-0">{i + 1}</span>
+              <span>{step}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Action buttons for wrong answers */}
+      {isWrongAnswer && onDismiss && (
+        <div className="mt-4 flex flex-wrap gap-2 justify-center">
+          {getHintButton()}
+          <button onClick={onDismiss}
+            className="bg-white/20 hover:bg-white/30 active:scale-95 text-white font-bold px-6 py-2.5 rounded-xl border border-white/30 transition-all touch-manipulation">
+            Continue →
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /**
  * DailyChallengeScreen — a 3-question daily quiz without shooter gameplay.
@@ -12,8 +135,10 @@ import { shuffleAnswers } from '../utils/shuffleAnswers.js';
  *   streak — current daily streak count
  *   soundOn — boolean
  *   setScreen — navigation callback
+ *   hintStage — current hint stage (0-3)
+ *   onRequestHint — callback to request next hint
  */
-export function DailyChallengeScreen({ questions = [], onAnswer, onComplete, streak = 0, soundOn, setScreen }) {
+export function DailyChallengeScreen({ questions = [], onAnswer, onComplete, streak = 0, soundOn, setScreen, hintStage = 0, onRequestHint, explainPromptData, onExplainResponse }) {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [feedback, setFeedback] = useState(null);
   const [correctCount, setCorrectCount] = useState(0);
@@ -22,6 +147,16 @@ export function DailyChallengeScreen({ questions = [], onAnswer, onComplete, str
   const q = questions[currentIdx];
   const total = questions.length || 3;
 
+  const handleDismissFeedback = () => {
+    setFeedback(null);
+    if (currentIdx + 1 >= total) {
+      setCompleted(true);
+      if (onComplete) onComplete(correctCount);
+    } else {
+      setCurrentIdx(currentIdx + 1);
+    }
+  };
+
   const handleAnswer = (answer) => {
     if (feedback || completed) return;
     if (!q) return;
@@ -29,21 +164,32 @@ export function DailyChallengeScreen({ questions = [], onAnswer, onComplete, str
     const correct = answer === q.a;
     const newCorrectCount = correct ? correctCount + 1 : correctCount;
 
-    setFeedback({ correct, answer, correctAnswer: q.a });
+    // Look up diagnostic message for wrong answers
+    let diagnosticMessage = null;
+    if (!correct && q.wrong) {
+      const matchedDistractor = q.wrong.find(d => getDisplayValue(d) === answer);
+      if (matchedDistractor && matchedDistractor.tag) {
+        diagnosticMessage = getDiagnosticMessage(matchedDistractor.tag);
+      }
+    }
+
+    setFeedback({ correct, answer, correctAnswer: q.a, diagnosticMessage });
     if (correct) setCorrectCount(newCorrectCount);
 
     if (onAnswer) onAnswer(currentIdx, answer, correct);
 
-    // Advance after delay
-    setTimeout(() => {
-      setFeedback(null);
-      if (currentIdx + 1 >= total) {
-        setCompleted(true);
-        if (onComplete) onComplete(newCorrectCount);
-      } else {
-        setCurrentIdx(currentIdx + 1);
-      }
-    }, 1800);
+    // Only auto-advance for correct answers; wrong answers wait for user to click Continue
+    if (correct) {
+      setTimeout(() => {
+        setFeedback(null);
+        if (currentIdx + 1 >= total) {
+          setCompleted(true);
+          if (onComplete) onComplete(newCorrectCount);
+        } else {
+          setCurrentIdx(currentIdx + 1);
+        }
+      }, 1800);
+    }
   };
 
   if (!questions || questions.length === 0) {
@@ -118,32 +264,38 @@ export function DailyChallengeScreen({ questions = [], onAnswer, onComplete, str
 
       {/* Feedback or Answers */}
       {feedback ? (
-        <div className={`max-w-lg mx-auto w-full text-center p-4 rounded-2xl border-2 ${feedback.correct ? 'bg-emerald-500/30 border-emerald-300' : 'bg-red-500/30 border-red-300'}`}>
-          <div className="text-2xl font-black text-white mb-1">{feedback.correct ? '✓ CORRECT!' : '✗ WRONG'}</div>
-          {!feedback.correct && (
-            <div className="text-sm text-white mt-1">Correct: <span className="font-bold"><MathText>{feedback.correctAnswer}</MathText></span></div>
-          )}
-          {!feedback.correct && q.steps && q.steps.length > 0 && (
-            <div className="mt-2 text-left space-y-1 max-h-32 overflow-y-auto">
-              {q.steps.map((step, i) => (
-                <div key={i} className="flex gap-2 items-start text-xs text-white/80">
-                  <span className="bg-white/20 rounded-full w-4 h-4 flex items-center justify-center text-[9px] font-bold flex-shrink-0">{i + 1}</span>
-                  <span>{step}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <DailyChallengeFeedbackPanel
+          feedback={feedback}
+          question={q}
+          onDismiss={!feedback.correct ? handleDismissFeedback : null}
+          hintStage={hintStage}
+          onRequestHint={onRequestHint}
+        />
       ) : (
         <div className="grid grid-cols-2 gap-2 sm:gap-3 max-w-lg mx-auto w-full">
           {shuffled.map((ans, i) => (
-            <button key={i} onClick={() => handleAnswer(ans)}
+            <button key={i} onClick={() => handleAnswer(getDisplayValue(ans))}
               className="bg-white hover:bg-yellow-200 active:scale-95 active:bg-yellow-300 text-slate-900 font-mono font-black text-base sm:text-lg md:text-xl px-3 py-4 sm:py-5 rounded-xl shadow-lg border-2 border-slate-900 transition-all touch-manipulation">
-              <MathText>{ans}</MathText>
+              <MathText>{getDisplayValue(ans)}</MathText>
             </button>
           ))}
         </div>
       )}
+
+      {/* Explain Your Answer prompt overlay — auto-advance timer is naturally paused since explain triggers after feedback */}
+      {explainPromptData && (
+        <ExplainPrompt
+          prompt={explainPromptData.prompt}
+          options={explainPromptData.options}
+          correctIndex={explainPromptData.correctIndex}
+          onComplete={onExplainResponse}
+        />
+      )}
+
+      <style>{`
+        @keyframes pulse-fast { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+        .animate-pulse-fast { animation: pulse-fast 0.6s ease-in-out infinite; }
+      `}</style>
     </div>
   );
 }
