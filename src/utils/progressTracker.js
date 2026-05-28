@@ -25,6 +25,7 @@ export async function loadProgressHistory() {
 
 /**
  * Record a new session — appends to history, trims to last 50 entries, persists.
+ * Also reports to MathCoach API if launched with studentId + token params.
  * @param {object} sessionData - SessionRecord shape
  */
 export async function recordSession(sessionData) {
@@ -36,6 +37,47 @@ export async function recordSession(sessionData) {
     await window.storage.set(STORAGE_KEY, JSON.stringify(trimmed));
   } catch (e) {
     // Persist failure is non-critical
+  }
+
+  // Report to MathCoach API (fire-and-forget)
+  reportToMathCoach(sessionData);
+}
+
+/**
+ * If the game was launched from MathCoach with ?studentId=xxx&token=yyy&apiUrl=zzz,
+ * POST the session results back so they appear on the learner dashboard.
+ */
+function reportToMathCoach(sessionData) {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const studentId = params.get('studentId');
+    const token = params.get('token');
+    const apiUrl = params.get('apiUrl');
+
+    if (!studentId || !token || !apiUrl) return; // Not launched from MathCoach
+
+    fetch(`${apiUrl}/game-sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        studentId,
+        game: 'algebra-assault',
+        topic: sessionData.topic || '',
+        questionsAttempted: sessionData.questionsAttempted || 0,
+        questionsCorrect: sessionData.questionsCorrect || 0,
+        questionsWrong: sessionData.questionsWrong || 0,
+        score: sessionData.score || 0,
+        timeSpent: sessionData.timeSpent || 0,
+        difficultyBreakdown: sessionData.difficultyBreakdown || {},
+      }),
+    }).catch(() => {
+      // Network failure is non-critical — game still works standalone
+    });
+  } catch (e) {
+    // Silently ignore — reporting is best-effort
   }
 }
 
