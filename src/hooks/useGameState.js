@@ -132,6 +132,24 @@ export function useGameState({ soundOn, setSoundOn, activeProfile, adaptiveState
     try { window.storage.set('disclaimer-dismissed', 'true'); } catch (e) {}
   };
 
+  // Record session on game over (covers both alien damage and wrong-answer death)
+  useEffect(() => {
+    if (screen === 'gameOver' && topic) {
+      const questionsAnswered = qIdx + 1;
+      const questionsRight = bestStreak;
+      const questionsWrong = questionsAnswered - questionsRight;
+      recordSession({
+        topic,
+        questionsAttempted: questionsAnswered,
+        questionsCorrect: questionsRight,
+        questionsWrong,
+        timeSpent: Math.round((Date.now() - missionStartTsRef.current) / 1000),
+        difficultyBreakdown: getMissionDifficultyBreakdown(questionsAnswered, questionsRight),
+        timestamp: Date.now(),
+      });
+    }
+  }, [screen]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Sync flags to ref
   useEffect(() => { gameRef.current.bossActive = bossActive; }, [bossActive]);
   useEffect(() => { gameRef.current.paused = paused || showQuestion || explainPaused || screen !== 'playing'; }, [paused, showQuestion, explainPaused, screen]);
